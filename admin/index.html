@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin - Khán đài live</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="login" class="hidden">
+  <form id="loginForm">
+    <h1>Khán đài live</h1>
+    <p class="mut" style="margin:0">Đăng nhập trang quản trị</p>
+    <label class="f">Mật khẩu<input type="password" id="pw" autocomplete="current-password" autofocus></label>
+    <button class="btn pri" type="submit">Đăng nhập</button>
+    <div id="loginErr" class="mut"></div>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>Khán đài live</h1>
+    <nav id="tabs">
+      <button data-tab="routing">Nguồn &amp; Sân khấu</button>
+      <button data-tab="rules">Luật &amp; Giá</button>
+      <button data-tab="live">Điều khiển trực tiếp</button>
+      <button data-tab="test">Test Panel</button>
+    </nav>
+    <span class="sp"></span>
+    <label class="f" style="flex-direction:row;align-items:center;gap:8px" id="stagePickWrap">Sân khấu
+      <select id="stagePick"></select>
+    </label>
+    <span title="Kết nối realtime tới server" class="mut"><span class="dot" id="rtDot"></span> realtime</span>
+    <button class="btn sm" id="logout">Đăng xuất</button>
+  </header>
+
+  <main>
+    <!-- 1. Nguồn & Sân khấu -->
+    <section id="tab-routing" class="hidden">
+      <div class="card">
+        <h2>Nguồn dữ liệu (Sources)</h2>
+        <div class="scroll"><table id="srcTable"></table></div>
+        <div class="row" style="margin-top:12px">
+          <select id="srcPlatform"><option value="tiktok">TikTok</option><option value="youtube">YouTube (chưa hỗ trợ)</option></select>
+          <input id="srcHandle" placeholder="Username TikTok (không cần @)" style="min-width:240px">
+          <button class="btn pri" id="srcAdd">Thêm nguồn</button>
+        </div>
+        <p class="mut" style="margin:8px 0 0;font-size:12px">Tick ô ở cột Sân khấu để ghép nguồn vào sân khấu. Một sân khấu có thể nhận nhiều nguồn (gộp), một nguồn có thể đổ vào nhiều sân khấu.</p>
+      </div>
+      <div class="card">
+        <h2>Sân khấu (Stages / Overlay OBS)</h2>
+        <div class="scroll"><table id="stageTable"></table></div>
+        <div class="row" style="margin-top:12px">
+          <input id="stName" placeholder="Tên sân khấu" style="min-width:200px">
+          <select id="stPreset">
+            <option value="1080x1920">Dọc 1080×1920 (9:16)</option>
+            <option value="1080x1080">Vuông 1080×1080</option>
+            <option value="1920x1080">Ngang 1920×1080 (16:9)</option>
+            <option value="custom">Tuỳ chỉnh…</option>
+          </select>
+          <span id="stCustom" class="row hidden"><input id="stW" type="number" value="1080" min="100" max="8000"> × <input id="stH" type="number" value="1920" min="100" max="8000"></span>
+          <button class="btn pri" id="stAdd">Tạo sân khấu</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2/3/4: có sân khấu được chọn -->
+    <div id="stageTabs" class="layout hidden">
+      <div>
+        <section id="tab-rules" class="hidden">
+          <div class="card">
+            <h2>Thông số tương tác</h2>
+            <div class="grid2" id="ruleFields"></div>
+          </div>
+          <div class="card">
+            <h2>Ghế VIP &amp; bảng giá quà</h2>
+            <div class="grid2" id="vipFields"></div>
+            <h2 style="margin-top:16px">Giá trị quà ghi đè (diamond)</h2>
+            <p class="mut" style="margin:0 0 8px;font-size:12px">Giá lấy từ danh sách quà của nền tảng; ghi đè ở đây khi cần quy đổi riêng theo ID quà.</p>
+            <div class="scroll"><table id="giftTable"></table></div>
+            <div class="row" style="margin-top:8px">
+              <input id="giftId" placeholder="ID quà" style="width:140px">
+              <input id="giftVal" type="number" min="0" placeholder="Diamond">
+              <button class="btn sm" id="giftAdd">Thêm</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Chiều cao vùng sân</h2>
+            <p class="mut" style="margin:0 0 8px;font-size:12px">Giới hạn chiều cao của vùng nhân vật đi lại ở phía dưới hàng VIP (tính bằng điểm ảnh của canvas). Để <b>0</b> = tự lấp đầy tới đáy. Sân cỏ kết thúc ở giới hạn này và phía dưới trong suốt. Lưu ngay, xem trước bên phải.</p>
+            <div class="row"><input type="number" id="fieldH" min="0" max="8000" step="10" style="width:130px"> <span class="mut">px</span><span class="mut" id="fieldHHint" style="font-size:12px"></span></div>
+          </div>
+          <div class="card">
+            <h2>Vùng an toàn (Safe Zone)</h2>
+            <p class="mut" style="margin:0 0 8px;font-size:12px">Chừa trống ở đáy (mặc định 0, không lề). Chỉ cần khi muốn tránh khung chat/nút của TikTok mà không chỉnh vị trí trong OBS. Kéo để xem trước ngay bên phải.</p>
+            <div class="row"><input type="range" id="safe" min="0" max="40" step="1" style="flex:1;min-width:200px"><b id="safeVal" style="min-width:48px"></b></div>
+          </div>
+          <div class="row end"><button class="btn pri" id="saveRules">Lưu cấu hình</button></div>
+        </section>
+
+        <section id="tab-live" class="hidden">
+          <div class="card">
+            <h2>Trạng thái sân khấu</h2>
+            <div class="stat" id="liveStat"></div>
+            <div id="liveNote" style="margin-top:10px"></div>
+          </div>
+          <div class="card">
+            <h2>Top 5 Ghế VIP</h2>
+            <div class="scroll"><table id="vipTable"></table></div>
+          </div>
+          <div class="card">
+            <h2>Thao tác</h2>
+            <div class="row">
+              <button class="btn dan" id="resetStage">Reset sân khấu</button>
+              <label class="chk mut"><input type="checkbox" id="resetHearts"> xoá cả số tim đã tích luỹ</label>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn dan" id="resetVip">Reset bảng VIP</button>
+              <span class="mut" style="font-size:12px">Xoá điểm quà và bảng Top 5 khi bắt đầu phiên live mới.</span>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <button class="btn dan" id="resetAll">Xoá toàn bộ dữ liệu sân khấu</button>
+              <span class="mut" style="font-size:12px">Xoá nhân vật, tim, quà, VIP.</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-test" class="hidden">
+          <div class="card">
+            <h2>Giả lập sự kiện</h2>
+            <div id="testNote" style="margin-bottom:10px"></div>
+            <div class="grid2">
+              <label class="f">Tên người xem test<input id="tName" value="Tester"></label>
+              <label class="f">Số tim (Simulate Likes)<input id="tLikes" type="number" min="1" value="10"></label>
+              <label class="f">Tên quà<input id="tGiftName" value="Hoa hồng"></label>
+              <label class="f">Giá trị quà (diamond)<input id="tGiftVal" type="number" min="0" value="100"></label>
+              <label class="f">Số lần tặng (repeatCount)<input id="tGiftRep" type="number" min="1" value="1"></label>
+              <label class="chk" style="align-self:end"><input type="checkbox" id="tCombo"> Quà combo (cộng phần chênh lệch)</label>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn" id="tJoin">Simulate Join</button>
+              <button class="btn" id="tLike">Simulate +Likes</button>
+              <button class="btn pri" id="tGift">Simulate Gift</button>
+              <button class="btn" id="tLeave">Simulate User Leave</button>
+              <button class="btn" id="tFollow">Simulate Follow</button>
+              <button class="btn" id="tShare">Simulate Share</button>
+              <button class="btn" id="tChat">Simulate Bình luận</button>
+            </div>
+            <p class="mut" style="margin:10px 0 0;font-size:12px">Người xem test có nhãn <span class="badge sim">test</span> và tự bị xoá sau <b id="ttl">30</b> giây (chỉnh ở tab Luật &amp; Giá). Chỉ vào sân khấu đang chọn.</p>
+          </div>
+          <div class="card">
+            <h2>Tạo nhanh nhiều người xem</h2>
+            <div class="row">
+              <input id="tBulk" type="number" min="1" max="60" value="12" style="width:90px">
+              <button class="btn" id="tBulkGo">Thả tim ngẫu nhiên cho N người</button>
+              <button class="btn" id="tBulkGift">Tặng quà ngẫu nhiên cho 5 người</button>
+            </div>
+          </div>
+          <div class="card"><h2>Nhật ký</h2><div class="log" id="tLog"></div></div>
+        </section>
+      </div>
+
+      <aside class="preview" id="previewBox">
+        <div class="card" style="padding:10px">
+          <div class="row" style="justify-content:space-between;margin-bottom:8px">
+            <h2 style="margin:0">Xem trước</h2>
+            <label class="chk mut" style="font-size:12px"><input type="checkbox" id="pvSafe" checked> Safe Zone</label>
+          </div>
+          <iframe id="pv" title="Xem trước overlay"></iframe>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<dialog id="stageDlg">
+  <form method="dialog" id="stageDlgForm" style="display:flex;flex-direction:column;gap:12px">
+    <h2>Sửa sân khấu</h2>
+    <label class="f">Tên<input id="dName" required></label>
+    <div class="row">
+      <label class="f">Rộng<input id="dW" type="number" min="100" max="8000"></label>
+      <label class="f">Cao<input id="dH" type="number" min="100" max="8000"></label>
+    </div>
+    <div class="row end"><button class="btn" value="cancel">Huỷ</button><button class="btn pri" value="ok">Lưu</button></div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

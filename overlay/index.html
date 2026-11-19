@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* Nền trong suốt để OBS thấy màn hình game phía sau. */
+  html,body{margin:0;padding:0;background:transparent;overflow:hidden}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+  /* Chỉ để xem thử ngoài OBS: thêm ?bg=checker|game|black */
+  body.bg-checker{background:conic-gradient(#3a3d48 25%,#2b2e38 0 50%,#3a3d48 0 75%,#2b2e38 0) 0 0/24px 24px}
+  body.bg-game{background:linear-gradient(180deg,#2d7a3c,#1e5a2b)}
+  body.bg-black{background:#000}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="/socket.io/socket.io.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

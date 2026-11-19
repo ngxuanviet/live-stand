@@ -1,0 +1,41 @@
+# Triển khai:   docker compose up -d --build
+# Kèm tunnel:   docker compose --profile tunnel up -d --build     (cần TUNNEL_TOKEN trong .env)
+# Biến môi trường được đọc từ file .env cùng thư mục (xem .env.example).
+
+services:
+  app:
+    build: .
+    image: khan-dai-live:latest
+    container_name: khan-dai-live
+    restart: unless-stopped
+    init: true
+    environment:
+      PORT: "3000"
+      DB_PATH: /app/data/app.db
+      # Hai biến dưới đây BẮT BUỘC đặt trong .env, không được dùng giá trị mẫu
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Hãy đặt ADMIN_PASSWORD trong file .env}
+      SESSION_SECRET: ${SESSION_SECRET:?Hãy đặt SESSION_SECRET trong file .env}
+      SIGN_API_KEY: ${SIGN_API_KEY:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      AVATAR_HOSTS: ${AVATAR_HOSTS:-}
+      TIKTOK_DEBUG_LOG: ${TIKTOK_DEBUG_LOG:-0}
+      TIKTOK_EXTENDED_GIFT_INFO: ${TIKTOK_EXTENDED_GIFT_INFO:-0}
+    ports:
+      # Mặc định chỉ mở ở localhost (dùng cùng cloudflared). Muốn truy cập trực tiếp qua IP VPS: đặt BIND_ADDR=0.0.0.0
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-3000}:3000"
+    volumes:
+      - data:/app/data
+
+  # Tuỳ chọn: tunnel Cloudflare, không cần mở cổng và có HTTPS sẵn.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
+    depends_on:
+      - app
+
+volumes:
+  data:

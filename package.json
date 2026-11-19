@@ -1,0 +1,21 @@
+{
+  "name": "khan-dai-live",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "express": "^5.3.0",
+    "socket.io": "^4.8.4",
+    "tiktok-live-connector": "^2.5.0"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server/index.js",
+    "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env server/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
+    "bench": "node --disable-warning=ExperimentalWarning bench/serverLoad.mjs",
+    "bench:stress": "node --disable-warning=ExperimentalWarning bench/stressServer.mjs"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
