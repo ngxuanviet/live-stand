@@ -61,6 +61,17 @@ Dữ liệu (SQLite và cache avatar) nằm ở volume `data` của Docker (`/ap
 5. **Test Panel:** thử mọi luồng (join, tim, quà, follow, share, bình luận) mà không cần phòng live thật. Người xem test có nhãn "test" và tự xoá sau 30 giây.
 6. **Điều khiển trực tiếp:** xem Top 5 VIP (có nút Kick), Reset sân khấu, Reset bảng VIP khi bắt đầu phiên mới.
 
+### Bình chọn 2 đáp án
+
+Tab **Điều khiển trực tiếp → Bình chọn 2 đáp án**: nhập câu hỏi, tên và từ khoá của hai đáp án (mặc định bình luận `1` hoặc `2`), thời lượng, rồi bấm **Bắt đầu**.
+
+- Người xem bình luận đúng từ khoá (không phân biệt hoa/thường và khoảng trắng thừa) thì nhân vật của họ đứng sang nửa sân của đáp án đó: A bên trái, B bên phải. Được đổi ý khi đang bình chọn; mỗi người một phiếu. Người chưa có nhân vật sẽ xuất hiện luôn ở đúng nửa sân.
+- Overlay chỉ thêm một dải mảnh ngay trên mép sân (tên + số phiếu hai bên, câu hỏi + đồng hồ đếm ngược ở giữa, thanh tỉ lệ) và tô nhạt hai nửa sân. Không có khung hay banner lớn.
+- VIP đã bầu thì rời ghế, xuống đứng thành một hàng ở phía trên nửa sân của phe mình như "lead": có vòng sáng màu phe dưới chân, hào quang, vương miện, tên và điểm quà luôn hiện, và luôn nổi trên các nhân vật khác. VIP chưa bầu vẫn ngồi ghế. Hết bình chọn (hoặc huỷ) thì VIP đi về ghế.
+- Hết giờ (hoặc bấm **Kết thúc ngay**) hiện kết quả vài giây, nhân vật phe thắng nhảy ăn mừng, rồi sân trở lại bình thường. **Huỷ** thì bỏ ngay, không hiện kết quả.
+- Mỗi sân khấu có một bình chọn tại một thời điểm; không lưu vào database nên khởi động lại server là kết thúc.
+- Cần nội dung bình luận từ TikTok. Lần đầu dùng hãy thử với live thật; nếu không nhận phiếu, bật `TIKTOK_DEBUG_LOG=1` và kiểm tra tên trường chứa nội dung bình luận trong `data/raw-events.jsonl` (hiện đọc `comment`, `content`, `text`).
+
 ### Luật chơi tóm tắt
 
 - Người xem chỉ xuất hiện khi thả tim, tặng quà, follow, share hoặc bình luận; tên hiện một lần (3 giây) lúc mới xuất hiện.
@@ -152,6 +163,7 @@ Cần Node 22.13 trở lên. Cấu trúc:
 - `GET/POST /api/sources`, `PUT/DELETE /api/sources/:id`, `PUT /api/sources/:id/routes {stageIds}`
 - `GET/POST /api/stages`, `PUT/DELETE /api/stages/:id`, `POST /api/stages/:id/token`
 - `GET /api/stages/:id/state`, `POST .../reset`, `.../reset-vip`, `.../reset-all`, `.../kick {userKey}`
+- `POST /api/stages/:id/poll {question, labelA, labelB, keywordA, keywordB, durationSec, resultSec}`, `POST .../poll/end`, `DELETE .../poll`
 - `POST /api/stages/:id/simulate {type: join|like|gift|leave|chat|follow|share, username, value, diamondValue, ...}`
 - `GET /api/status` (trạng thái kết nối các nguồn)
 

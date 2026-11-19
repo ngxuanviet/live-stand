@@ -26,6 +26,12 @@ export function extractUser(data) {
   return { userId: userId == null ? null : String(userId), username, avatar };
 }
 
+/** Nội dung bình luận. Thư viện v2 dùng `comment`; nhận thêm vài tên trường dự phòng. Cần xác nhận bằng TIKTOK_DEBUG_LOG=1. */
+export function extractChatText(data) {
+  const t = data?.comment ?? data?.content ?? data?.text ?? '';
+  return typeof t === 'string' ? t : '';
+}
+
 /**
  * Đọc thông tin quà theo dữ liệu thật của thư viện v2 (đã kiểm tra với phòng live):
  *   data.gift = { id, name, diamondCount, combo (bool), type }
@@ -119,7 +125,7 @@ export class TikTokConnector extends Connector {
     conn.on(WebcastEvent.MEMBER, (d) => this.#emit(EventType.JOIN, d, 'member'));
     conn.on(WebcastEvent.LIKE, (d) => this.#emit(EventType.LIKE, d, 'like', { value: extractLikeCount(d) }));
     conn.on(WebcastEvent.GIFT, (d) => this.#emit(EventType.GIFT, d, 'gift', { gift: extractGift(d) }));
-    conn.on(WebcastEvent.CHAT, (d) => this.#emit(EventType.CHAT, d, 'chat'));
+    conn.on(WebcastEvent.CHAT, (d) => this.#emit(EventType.CHAT, d, 'chat', { text: extractChatText(d) }));
     conn.on(WebcastEvent.FOLLOW, (d) => this.#emit(EventType.FOLLOW, d, 'follow'));
     conn.on(WebcastEvent.SHARE, (d) => this.#emit(EventType.SHARE, d, 'share'));
   }

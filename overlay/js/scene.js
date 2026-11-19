@@ -6,6 +6,7 @@ const RUN_SPEED = 46; // sau mốc tim
 const VIP_SPEED = 80;
 const JUMP_MS = 600;
 const MAX_BUBBLES = 6; // số bong bóng tên hiển thị cùng lúc tối đa
+const POLL_COL = ['#ff7eb6', '#5ee7ff']; // màu phe A (trái) và phe B (phải)
 
 /**
  * Bố cục logic (pixel-art). Nội dung bắt đầu ngay mép trên của canvas, không có lề:
@@ -49,6 +50,7 @@ export class Scene {
     this.texts = [];
     this.offset = 0; // serverNow - Date.now()
     this.settings = settings;
+    this.poll = null; // bình chọn 2 phe (xem StageEngine.#pollView)
     this.lookAllUntil = 0;
     this.nextLookAll = Date.now() + 8000;
     this.fps = 0;
@@ -98,9 +100,10 @@ export class Scene {
       key, name: name || '', avatarUrl: avatarUrl || '', look: charLook(key),
       x: 0, y: 0, tx: 0, ty: 0, state: 'idle', runUntil: 0, jumpT: 0, lookUntil: 0,
       nextLook: now + 4000 + Math.random() * 12000, nextWander: now + 1500 + Math.random() * 4000,
-      greetUntil: 0, zUntil: 0, moveSeq: 0, leaving: false,
+      greetUntil: 0, zUntil: 0, moveSeq: 0, leaving: false, side: null,
       // chỉ dành cho VIP
       rank: 0, giftTotal: 0, absent: false, seated: false,
+      lead: false, // VIP đã bầu: rời ghế, xuống đứng làm "lead" của phe mình
     };
   }
 
@@ -112,6 +115,7 @@ export class Scene {
     // snapshot đầy đủ (reset / resync): người không còn trong danh sách biến mất ngay
     for (const k of [...this.chars.keys()]) if (!keys.has(k)) this.#drop(this.chars, k);
     this.#setVip(s.vip, initial);
+    this.poll = s.poll || null;
   }
 
   applyPatch(p) {
@@ -119,6 +123,7 @@ export class Scene {
     if (p.settings) this.#applySettings(p.settings);
     for (const u of p.users) this.#upsert(u, true);
     if (p.vip) this.#setVip(p.vip, false);
+    if (p.poll !== undefined) this.poll = p.poll; // null = bình chọn đã kết thúc
     for (const k of p.removed) {
       const ch = this.chars.get(k);
       if (ch) this.#leave(ch);
@@ -173,6 +178,7 @@ export class Scene {
     if (u.name !== undefined) ch.name = u.name; // patch gọn không gửi lại tên/avatar nếu không đổi
     if (u.avatar !== undefined) ch.avatarUrl = u.avatar;
     ch.leaving = false;
+    if (u.side !== undefined) ch.side = u.side; // 0 = phe A (nửa trái), 1 = phe B (nửa phải), null = tự do
     ch.moveSeq = u.moveSeq;
     ch.greetUntil = u.greetUntil;
     ch.zUntil = u.zUntil;
@@ -230,10 +236,41 @@ export class Scene {
       vc.absent = v.absent;
       vc.tx = seat.x;
       vc.ty = seat.y;
+      vc.lead = v.side === 0 || v.side === 1;
+      vc.side = vc.lead ? v.side : null;
+    }
+    this.#placeLeads(list, initial);
+  }
+
+  /** VIP đã bầu rời ghế, xếp thành một hàng ở phía trên nửa sân của phe mình (theo hạng VIP). */
+  #placeLeads(list, initial) {
+    const { Lw, playTop } = this.lay;
+    for (const side of [0, 1]) {
+      const group = list.filter((v) => v.side === side).sort((a, b) => a.rank - b.rank);
+      const n = group.length;
+      const spacing = Math.min(28, (Lw / 2 - 20) / Math.max(1, n));
+      const cx = Lw * (side ? 0.75 : 0.25);
+      group.forEach((v, k) => {
+        const vc = this.vips.get(v.key);
+        if (!vc) return;
+        vc.tx = cx + (k - (n - 1) / 2) * spacing;
+        vc.ty = playTop + 14;
+        vc.seated = false;
+        if (initial) {
+          vc.x = vc.tx;
+          vc.y = vc.ty;
+        }
+      });
     }
   }
 
   #effect(e) {
+    if (e.type === 'pollWin') {
+      // phe thắng nhảy ăn mừng (hoà: không ai nhảy)
+      const t0 = Date.now();
+      if (e.side === 0 || e.side === 1) for (const c of [...this.chars.values(), ...this.vips.values()]) if (c.side === e.side) c.jumpT = t0;
+      return;
+    }
     const ch = this.chars.get(e.userKey) || this.vips.get(e.userKey);
     if (!ch) return;
     const now = Date.now();
@@ -278,7 +315,10 @@ export class Scene {
         if (now > ch.nextWander) {
           ch.nextWander = now + 2500 + Math.random() * 4000;
           if (Math.random() < 0.5) {
-            ch.tx = Math.max(MAX_FIELD_X_PAD, Math.min(Lw - MAX_FIELD_X_PAD, ch.x + (Math.random() - 0.5) * 70));
+            // đang bình chọn: chỉ đi dạo trong nửa sân của phe mình
+            const lo = ch.side === 1 ? Lw / 2 + 4 : MAX_FIELD_X_PAD;
+            const hi = ch.side === 0 ? Lw / 2 - 4 : Lw - MAX_FIELD_X_PAD;
+            ch.tx = Math.max(lo, Math.min(hi, ch.x + (Math.random() - 0.5) * 70));
             ch.ty = Math.max(playTop, Math.min(playBottom - 6, ch.y + (Math.random() - 0.5) * 40));
             ch.state = 'walk';
             ch.runUntil = 0;
@@ -292,7 +332,12 @@ export class Scene {
         vc.y = vc.ty;
         continue;
       }
-      if (step(vc, VIP_SPEED)) {
+      const arrived = step(vc, VIP_SPEED);
+      if (vc.lead) {
+        vc.state = arrived ? 'idle' : 'walk'; // lead đứng tại chỗ (không ngồi lại ghế)
+        continue;
+      }
+      if (arrived) {
         vc.seated = true;
         this.fx.push({ type: 'sparkle', x: vc.x, y: vc.y - 22, t0: now, dur: 900 });
       } else vc.state = 'walk';
@@ -355,12 +400,41 @@ export class Scene {
       labels.push({ i, seat, s, vc });
     }
 
+    // ---- bình chọn: tô nhạt hai nửa sân + vạch giữa (HUD chữ vẽ ở phần dưới)
+    if (this.poll) {
+      const mid = lay.Lw / 2;
+      const h = lay.playBottom - lay.playTop;
+      M.globalAlpha = 0.1;
+      M.fillStyle = POLL_COL[0];
+      M.fillRect(0, lay.playTop, mid, h);
+      M.fillStyle = POLL_COL[1];
+      M.fillRect(mid, lay.playTop, mid, h);
+      M.globalAlpha = 0.35;
+      M.fillStyle = '#ffffff';
+      for (let y = lay.playTop; y < lay.playBottom; y += 6) M.fillRect(Math.floor(mid), y, 1, 3);
+      M.globalAlpha = 1;
+    }
+
     // ---- sân chơi: người dưới sân + VIP đang đi tới ghế, xếp theo trục Y (z-index), người vừa qua mốc nổi lên trên
     const field = [...this.chars.values(), ...walkingVips];
-    field.sort((a, b) => a.y + (sNow < a.zUntil ? 1000 : 0) - (b.y + (sNow < b.zUntil ? 1000 : 0)));
+    const boost = (c) => (sNow < c.zUntil || c.lead ? 1000 : 0); // lead luôn nổi trên cùng
+    field.sort((a, b) => a.y + boost(a) - (b.y + boost(b)));
+    const leads = [];
     for (const ch of field) {
       const { state, jump } = this.#charState(ch, now);
+      if (ch.lead) {
+        // vòng sáng dưới chân theo màu phe + hào quang để lead nổi bật giữa đám đông
+        M.globalAlpha = 0.55;
+        M.fillStyle = POLL_COL[ch.side];
+        M.fillRect(Math.round(ch.x) - 9, Math.round(ch.y) - 1, 18, 3);
+        M.globalAlpha = 1;
+        drawAura(M, ch.x, ch.y - 20, t);
+      }
       const info = drawChar(M, ch.look, ch.x, ch.y, state, t, { jump, head: this.avatars.head(ch.key, ch.avatarUrl, state === 'look') });
+      if (ch.lead) {
+        drawCrown(M, Math.round(ch.x), info.headTop, t);
+        leads.push(ch);
+      }
       if (sNow < ch.greetUntil) bubbles.push({ ch, headTop: info.headTop });
     }
 
@@ -381,6 +455,10 @@ export class Scene {
       this.#text(trunc(vc.name, 10), seat.x, ly, 7, '#ffffff');
       this.#text(`◆ ${fmt(vc.giftTotal)}`, seat.x, ly + 8, 6.5, RANKCOL[i]);
       if (vc.absent) this.#text('zZ', seat.x + 12, seat.y - 34, 7, '#c8d4ff');
+    }
+    for (const ch of leads) {
+      this.#text(trunc(ch.name, 10), ch.x, ch.y + 8, 7, '#ffffff');
+      this.#text(`◆ ${fmt(ch.giftTotal)}`, ch.x, ch.y + 16, 6.5, RANKCOL[Math.max(0, ch.rank - 1)]);
     }
     // Giảm rối khi phòng đông: tối đa MAX_BUBBLES bong bóng, ưu tiên cái mới nhất, không cho đè lên nhau
     bubbles.sort((a, b) => b.ch.greetUntil - a.ch.greetUntil);
@@ -415,6 +493,7 @@ export class Scene {
       M.fillStyle = INK;
       M.fillText(name, (x + w / 2) * S, (y + 5.5) * S);
     }
+    this.#drawPoll(sNow);
     for (const f of this.texts) {
       const p = (now - f.t0) / f.dur;
       M.globalAlpha = 1 - p * p;
@@ -435,6 +514,43 @@ export class Scene {
     if (this.debug) {
       this.#text(`${this.fps.toFixed(0)} fps · sân ${this.chars.size} · VIP ${this.vips.size}`, 4, 8, 6, '#5ee7ff', INK, 'left');
     }
+  }
+
+  /** HUD bình chọn: một dải mảnh ở mép trên cùng của overlay. Gọi khi transform đang ở độ phân giải thật. */
+  #drawPoll(sNow) {
+    const p = this.poll;
+    if (!p) return;
+    const { M, S, lay } = this;
+    const { Lw, playTop } = lay;
+    const [a, b] = p.counts;
+    const total = a + b;
+    const y = 5; // hàng chữ: sát mép trên cùng của overlay
+    const barY = y + 5;
+    const x0 = 6;
+    const w = Lw - 12;
+    // nền tối mờ phía sau để chữ luôn đọc được dù nhân vật/bong bóng tên đứng đè lên
+    M.fillStyle = 'rgba(10,12,28,0.78)';
+    M.fillRect(0, 0, lay.W, (y + 11) * S);
+    // thanh tỉ lệ (chưa ai bầu: chia đôi)
+    const aw = total ? Math.round((w * a) / total) : Math.round(w / 2);
+    M.fillStyle = INK;
+    M.fillRect((x0 - 1) * S, (barY - 1) * S, (w + 2) * S, 5 * S);
+    M.fillStyle = POLL_COL[0];
+    M.fillRect(x0 * S, barY * S, aw * S, 3 * S);
+    M.fillStyle = POLL_COL[1];
+    M.fillRect((x0 + aw) * S, barY * S, (w - aw) * S, 3 * S);
+    // chữ: tên + số phiếu hai bên, giữa là câu hỏi + đồng hồ / kết quả
+    this.#text(`${trunc(p.labels[0], 10)} ${a}`, x0, y, 6.5, POLL_COL[0], INK, 'left');
+    this.#text(`${b} ${trunc(p.labels[1], 10)}`, x0 + w, y, 6.5, POLL_COL[1], INK, 'right');
+    let mid;
+    if (p.status === 'active') {
+      const left = Math.max(0, Math.ceil((p.endsAt - sNow) / 1000));
+      const clock = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+      mid = p.question ? `${trunc(p.question, 22)} ${clock}` : clock;
+    } else {
+      mid = p.result === 'tie' ? 'HÒA!' : `${trunc(p.labels[p.result], 12)} THẮNG!`;
+    }
+    this.#text(mid, Lw / 2, y, 6.5, p.status === 'active' ? '#ffffff' : '#ffe27a');
   }
 
   #text(s, lx, ly, size, color, stroke = INK, align = 'center') {

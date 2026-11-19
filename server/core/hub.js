@@ -294,6 +294,38 @@ export class Hub extends EventEmitter {
     for (const stageId of stages) this.engines.get(stageId)?.handle(evt);
   }
 
+  // ------------------------------------------------------------------ Bình chọn
+  startPoll(stageId, input = {}) {
+    const engine = this.engine(stageId);
+    const text = (v, def, max, label) => {
+      const s = String(v ?? def).trim();
+      if (!s || s.length > max) throw new HubError(`${label} không hợp lệ (tối đa ${max} ký tự)`);
+      return s;
+    };
+    const question = String(input.question ?? '').trim().slice(0, 80);
+    const labels = [text(input.labelA, 'A', 16, 'Tên đáp án A'), text(input.labelB, 'B', 16, 'Tên đáp án B')];
+    const keywords = [text(input.keywordA, '1', 20, 'Từ khoá A'), text(input.keywordB, '2', 20, 'Từ khoá B')];
+    if (keywords[0].toLowerCase().replace(/\s+/g, ' ') === keywords[1].toLowerCase().replace(/\s+/g, ' ')) throw new HubError('Hai từ khoá không được trùng nhau');
+    const range = (v, def, min, max, label) => {
+      const n = v === undefined || v === '' ? def : Number(v);
+      if (!Number.isFinite(n) || n < min || n > max) throw new HubError(`${label} phải từ ${min} đến ${max}`);
+      return n;
+    };
+    const durationSec = range(input.durationSec, 60, 10, 600, 'Thời lượng (giây)');
+    const resultSec = range(input.resultSec, 8, 3, 60, 'Thời gian hiện kết quả (giây)');
+    return engine.startPoll({ question, labels, keywords, durationSec, resultSec });
+  }
+
+  endPoll(stageId) {
+    if (!this.engine(stageId).endPoll()) throw new HubError('Không có bình chọn đang diễn ra', 409);
+    return { ok: true };
+  }
+
+  cancelPoll(stageId) {
+    this.engine(stageId).cancelPoll();
+    return { ok: true };
+  }
+
   // ------------------------------------------------------------------ Test Panel
   /** Gửi event giả thẳng vào MỘT Stage được chọn (không đi qua Source thật). */
   simulate(stageId, input) {
@@ -323,6 +355,7 @@ export class Hub extends EventEmitter {
       eventType: type,
       value: type === EventType.LIKE ? Math.max(1, Math.floor(num(input.value, 1))) : 0,
       gift,
+      text: type === EventType.CHAT ? String(input.text ?? '') : '',
       simulated: true,
     });
     engine.handle(evt);

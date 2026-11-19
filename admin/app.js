@@ -410,6 +410,7 @@ async function refreshLive() {
     S.live = await api('GET', `/stages/${S.stageId}/state`);
     S.vip = S.live.vip;
     if (S.tab === 'live') {
+      renderPollStat();
       renderLiveStat();
       renderVip();
       renderLiveNote();
@@ -447,6 +448,41 @@ $('#vipTable').addEventListener('click', async (e) => {
   const v = S.vip.find((x) => x.key === key);
   if (confirm(`Đá "${v?.name}" khỏi ghế VIP? (Họ được xét lại khi tặng quà mới.)`) && (await act(() => api('POST', `/stages/${S.stageId}/kick`, { userKey: key }), 'Đã Kick'))) refreshLive();
 });
+
+// ---- Bình chọn
+function renderPollStat() {
+  const p = S.live?.poll;
+  if (!p) {
+    $('#pStat').innerHTML = '<span class="mut">Chưa có bình chọn nào đang chạy.</span>';
+  } else if (p.status === 'active') {
+    const left = Math.max(0, Math.ceil((p.endsAt - Date.now()) / 1000));
+    $('#pStat').innerHTML = `<div class="note">Đang bình chọn${p.question ? `: <b>${esc(p.question)}</b>` : ''} · còn <b>${left}</b> giây<br>${esc(p.labels[0])}: <b>${p.counts[0]}</b> phiếu · ${esc(p.labels[1])}: <b>${p.counts[1]}</b> phiếu</div>`;
+  } else {
+    const r = p.result === 'tie' ? 'Hoà' : `${esc(p.labels[p.result])} thắng`;
+    $('#pStat').innerHTML = `<div class="note">Đã kết thúc: <b>${r}</b> (${p.counts[0]} – ${p.counts[1]}). Đang hiện kết quả trên overlay.</div>`;
+  }
+}
+
+$('#pStart').addEventListener('click', async () => {
+  const body = {
+    question: $('#pQ').value,
+    labelA: $('#pLA').value,
+    labelB: $('#pLB').value,
+    keywordA: $('#pKA').value,
+    keywordB: $('#pKB').value,
+    durationSec: $('#pDur').value,
+    resultSec: $('#pRes').value,
+  };
+  if (S.live?.poll?.status === 'active' && !confirm('Đang có bình chọn chạy. Bắt đầu cái mới sẽ xoá phiếu hiện tại. Tiếp tục?')) return;
+  if (await act(() => api('POST', `/stages/${S.stageId}/poll`, body), 'Đã bắt đầu bình chọn')) refreshLive();
+});
+$('#pEnd').addEventListener('click', async () => {
+  if (await act(() => api('POST', `/stages/${S.stageId}/poll/end`, {}), 'Đã chốt kết quả')) refreshLive();
+});
+$('#pCancel').addEventListener('click', async () => {
+  if (await act(() => api('DELETE', `/stages/${S.stageId}/poll`), 'Đã huỷ bình chọn')) refreshLive();
+});
+setInterval(() => S.tab === 'live' && S.live && renderPollStat(), 1000); // đồng hồ đếm ngược mượt giữa hai lần poll
 
 const resetBtn = (sel, path, msg, ok, body) =>
   $(sel).addEventListener('click', async () => {
@@ -504,6 +540,19 @@ $('#tGift').addEventListener('click', () =>
     `Quà ${$('#tGiftName').value} x${$('#tGiftRep').value} (${$('#tGiftVal').value}◆)`,
   ),
 );
+
+const voteWord = (side) => ($(side ? '#pKB' : '#pKA').value || (side ? '2' : '1')).trim();
+$('#tVoteA').addEventListener('click', () => sim({ type: 'chat', text: voteWord(0) }, 'Bầu A'));
+$('#tVoteB').addEventListener('click', () => sim({ type: 'chat', text: voteWord(1) }, 'Bầu B'));
+$('#tVoteBulk').addEventListener('click', async () => {
+  const n = Math.min(60, Math.max(1, +$('#tVoteN').value || 1));
+  const pool = [...NAMES].sort(() => Math.random() - 0.5);
+  await Promise.all(Array.from({ length: n }, (_, i) => {
+    const name = pool[i % pool.length] + (i >= pool.length ? ` ${i}` : '');
+    return api('POST', `/stages/${S.stageId}/simulate`, { type: 'chat', username: name, avatar: avatarFor(name), text: voteWord(Math.random() < 0.5 ? 0 : 1) }).catch((e) => toast(e.message, true));
+  }));
+  log(`${n} người bầu ngẫu nhiên`);
+});
 
 $('#tBulkGo').addEventListener('click', async () => {
   const n = Math.min(60, Math.max(1, +$('#tBulk').value || 1));

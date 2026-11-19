@@ -61,6 +61,11 @@ export function createAdminApi(hub, config) {
     }),
   );
 
+  // Bình chọn 2 phe
+  api.post('/stages/:id/poll', wrap((req) => hub.startPoll(req.params.id, req.body || {})));
+  api.post('/stages/:id/poll/end', wrap((req) => hub.endPoll(req.params.id)));
+  api.delete('/stages/:id/poll', wrap((req) => hub.cancelPoll(req.params.id)));
+
   // Test Panel
   api.post('/stages/:id/simulate', wrap((req) => hub.simulate(req.params.id, req.body || {})));
 

@@ -312,3 +312,119 @@ test('người đang ngồi ghế VIP: hành động không làm họ rời gh�
   assert.deepEqual(engine.snapshot().vip.map((v) => v.key), ['tiktok:v']);
   assert.equal(engine.snapshot().users.length, 0);
 });
+
+// ------------------------------------------------------------------ bình chọn 2 phe
+const chat = (h, u, text) => h.engine.handle(h.ev(u, EventType.CHAT, { text }));
+const startPoll = (h, cfg = {}) => h.engine.startPoll({ question: 'Q?', labels: ['Phở', 'Bún'], keywords: ['1', '2'], durationSec: 60, resultSec: 8, ...cfg });
+
+test('poll: chỉ bình luận khớp từ khoá (bỏ hoa/thường, khoảng trắng) mới tính phiếu', () => {
+  const h = setup();
+  startPoll(h, { keywords: ['Phở', 'bún bò'] });
+  chat(h, 'a', '  PHỞ ');
+  chat(h, 'b', 'bún   bò');
+  chat(h, 'c', 'xin chào');
+  chat(h, 'd', '');
+  assert.deepEqual(h.engine.snapshot().poll.counts, [1, 1]);
+});
+
+test('poll: đổi phe thì phiếu chuyển, tổng không đổi; phiếu không bị cooldown chặn', () => {
+  const h = setup({ actionCooldownSec: 600 });
+  startPoll(h);
+  chat(h, 'a', '1');
+  chat(h, 'a', '2'); // ngay lập tức, vẫn trong cooldown
+  assert.deepEqual(h.engine.snapshot().poll.counts, [0, 1]);
+  chat(h, 'a', '2'); // bầu lại cùng phe: không đếm hai lần
+  assert.deepEqual(h.engine.snapshot().poll.counts, [0, 1]);
+});
+
+test('poll: nhân vật xuất hiện và di chuyển đúng nửa sân của phe mình', () => {
+  const h = setup({ heartsPerMove: 1 });
+  startPoll(h);
+  for (let i = 0; i < 20; i++) {
+    chat(h, `l${i}`, '1');
+    chat(h, `r${i}`, '2');
+  }
+  for (let i = 0; i < 20; i++) {
+    h.clock.t += 20_000; // qua cooldown để chat tiếp tục kích hoạt di chuyển
+    chat(h, `l${i}`, 'ok');
+    chat(h, `r${i}`, 'ok');
+  }
+  for (const u of h.engine.snapshot().users) {
+    if (u.key.startsWith('tiktok:l')) assert.ok(u.pos.x <= 0.46 && u.side === 0, `${u.key} x=${u.pos.x}`);
+    else assert.ok(u.pos.x >= 0.54 && u.side === 1, `${u.key} x=${u.pos.x}`);
+  }
+});
+
+test('poll: người đang đứng bên kia đổi phe thì được đưa sang đúng nửa sân', () => {
+  const h = setup();
+  startPoll(h);
+  chat(h, 'a', '1');
+  const u = h.engine.users.get('tiktok:a');
+  assert.ok(u.pos.x <= 0.46);
+  const seq = u.moveSeq;
+  chat(h, 'a', '2');
+  assert.ok(u.pos.x >= 0.54);
+  assert.ok(u.moveSeq > seq);
+});
+
+test('poll: hết giờ chốt kết quả, hoà là tie, hết thời gian hiện kết quả thì xoá poll và bỏ phe', () => {
+  const h = setup();
+  startPoll(h, { durationSec: 10, resultSec: 5 });
+  chat(h, 'a', '1');
+  chat(h, 'b', '2');
+  h.engine.drainPatch();
+  h.advance(10_000);
+  let p = h.engine.snapshot().poll;
+  assert.equal(p.status, 'result');
+  assert.equal(p.result, 'tie');
+  const patch = h.engine.drainPatch();
+  assert.ok(patch.effects.some((e) => e.type === 'pollWin' && e.side === null));
+  chat(h, 'c', '1'); // phiếu sau khi hết giờ bị bỏ qua
+  assert.deepEqual(h.engine.snapshot().poll.counts, [1, 1]);
+  h.advance(5_000);
+  assert.equal(h.engine.snapshot().poll, null);
+  const after = h.engine.drainPatch();
+  assert.equal(after.poll, null);
+  assert.ok(after.users.every((u) => u.side === null));
+});
+
+test('poll: phe nhiều phiếu hơn thắng', () => {
+  const h = setup();
+  startPoll(h, { durationSec: 10 });
+  chat(h, 'a', '2');
+  chat(h, 'b', '2');
+  chat(h, 'c', '1');
+  assert.equal(h.engine.endPoll(), true);
+  assert.equal(h.engine.snapshot().poll.result, 1);
+  assert.equal(h.engine.endPoll(), false); // đã chốt
+});
+
+test('poll: snapshot không lộ danh sách phiếu; huỷ poll xoá phe; resetAll xoá poll', () => {
+  const h = setup();
+  startPoll(h);
+  chat(h, 'a', '1');
+  const s = JSON.stringify(h.engine.snapshot().poll);
+  assert.ok(!s.includes('tiktok:a'));
+  h.engine.drainPatch();
+  assert.equal(h.engine.cancelPoll(), true);
+  assert.equal(h.engine.snapshot().poll, null);
+  assert.equal(h.engine.snapshot().users[0].side, null);
+  startPoll(h);
+  h.engine.resetAll();
+  assert.equal(h.engine.snapshot().poll, null);
+});
+
+test('poll: VIP đã bầu có side trong view VIP (xuống làm lead), chưa bầu thì null; huỷ poll trả về null', () => {
+  const h = setup();
+  h.gift('v1', { diamondValue: 500 });
+  h.gift('v2', { diamondValue: 100 });
+  startPoll(h);
+  chat(h, 'v1', '2');
+  const vip = () => Object.fromEntries(h.engine.snapshot().vip.map((v) => [v.key, v.side]));
+  assert.deepEqual(vip(), { 'tiktok:v1': 1, 'tiktok:v2': null });
+  assert.equal(h.engine.drainPatch().vip.find((v) => v.key === 'tiktok:v1').side, 1);
+  assert.ok(!h.fieldKeys().includes('tiktok:v1')); // vẫn không phải người dưới sân phía server
+  h.engine.cancelPoll();
+  assert.deepEqual(vip(), { 'tiktok:v1': null, 'tiktok:v2': null });
+  assert.ok(h.engine.drainPatch().vip); // báo overlay cho VIP về ghế
+});

@@ -42,6 +42,7 @@ export function makeEvent({
   eventType,
   value = 0,
   gift = null,
+  text = '',
   simulated = false,
   timestamp = Date.now(),
 }) {
@@ -59,6 +60,7 @@ export function makeEvent({
     eventType,
     value: Number(value) || 0,
     gift,
+    text: String(text ?? '').slice(0, 100), // nội dung bình luận (chỉ eventType = chat)
     simulated: !!simulated,
     timestamp,
   };

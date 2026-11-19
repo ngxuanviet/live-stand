@@ -80,6 +80,10 @@ export class StageEngine {
         this.#onLeave(evt, now);
         break;
       case EventType.CHAT:
+        this.#recordVote(evt, now); // ghi phiếu trước để nhân vật xuất hiện/di chuyển đúng phe
+        this.#onAction(evt, now);
+        this.#placeOnSide(evt.userKey, now);
+        break;
       case EventType.FOLLOW:
       case EventType.SHARE:
         this.#onAction(evt, now);
@@ -240,7 +244,10 @@ export class StageEngine {
   }
 
   // ------------------------------------------------------------------ sân chơi
-  #randPos() {
+  #randPos(u) {
+    const side = u ? this.#sideOf(u) : null;
+    if (side === 0) return { x: 0.04 + this.random() * 0.42, y: this.random() };
+    if (side === 1) return { x: 0.54 + this.random() * 0.42, y: this.random() };
     return { x: 0.05 + this.random() * 0.9, y: this.random() };
   }
   #edgePos() {
@@ -261,7 +268,7 @@ export class StageEngine {
       this.patch.fullViewKeys.add(u.userKey);
       u.spawnedAt = now;
       u.from = this.#edgePos();
-      u.pos = this.#randPos();
+      u.pos = this.#randPos(u);
       this.patch.effects.push({ type: 'spawn', userKey: u.userKey });
       if (!u.greeted) {
         u.greeted = true; // tên chỉ hiện 1 lần duy nhất cho tới khi admin reset
@@ -284,7 +291,7 @@ export class StageEngine {
 
   #move(u, now) {
     u.from = { ...u.pos };
-    u.pos = this.#randPos();
+    u.pos = this.#randPos(u);
     u.moveSeq += 1;
     u.zUntil = now + this.settings.zBoostSec * 1000;
     // một hiệu ứng chớp mỗi người trong mỗi patch (tránh bão hiệu ứng khi tim dồn dập)
@@ -385,6 +392,137 @@ export class StageEngine {
     }
     // dọn chuỗi combo bỏ dở
     for (const [k, v] of this.streaks) if (now - v.ts > STREAK_TTL_MS) this.streaks.delete(k);
+    this.#tickPoll(now);
+  }
+
+  // ------------------------------------------------------------------ bình chọn 2 phe
+  #normText(s) {
+    return String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  /** Phe của người dùng (0 = A, 1 = B) khi có poll; null nếu chưa bầu hoặc không có poll. */
+  #sideOf(u) {
+    return this.poll ? (this.poll.votes.get(u.userKey) ?? null) : null;
+  }
+
+  #pollView() {
+    const p = this.poll;
+    if (!p) return null;
+    return {
+      id: p.id,
+      question: p.question,
+      labels: p.labels,
+      status: p.status,
+      startedAt: p.startedAt,
+      endsAt: p.endsAt,
+      resultUntil: p.resultUntil,
+      counts: [...p.counts],
+      result: p.result, // 0 | 1 | 'tie' | null
+    };
+  }
+
+  /**
+   * Bắt đầu poll (thay poll đang có nếu còn). cfg đã được Hub kiểm tra; ở đây chỉ chuẩn hoá lại.
+   * Không lưu DB: khởi động lại server thì poll kết thúc.
+   */
+  startPoll(cfg = {}) {
+    const now = this.now();
+    const labels = [String(cfg.labels?.[0] ?? 'A').slice(0, 16), String(cfg.labels?.[1] ?? 'B').slice(0, 16)];
+    const keywords = [this.#normText(cfg.keywords?.[0] ?? '1'), this.#normText(cfg.keywords?.[1] ?? '2')];
+    const durationSec = Math.min(600, Math.max(10, Number(cfg.durationSec) || 60));
+    const resultSec = Math.min(60, Math.max(3, Number(cfg.resultSec) || 8));
+    this.#clearPollUsers();
+    this.patch.vip = true;
+    this.poll = {
+      id: `${now}-${Math.floor(this.random() * 1e6)}`,
+      question: String(cfg.question ?? '').slice(0, 80),
+      labels,
+      keywords,
+      resultSec,
+      status: 'active',
+      startedAt: now,
+      endsAt: now + durationSec * 1000,
+      resultUntil: 0,
+      votes: new Map(),
+      counts: [0, 0],
+      result: null,
+    };
+    this.patch.poll = true;
+    return this.#pollView();
+  }
+
+  /** Kết thúc ngay (chốt kết quả). */
+  endPoll() {
+    if (this.poll?.status !== 'active') return false;
+    this.#finishPoll(this.now());
+    return true;
+  }
+
+  /** Huỷ không hiện kết quả. */
+  cancelPoll() {
+    if (!this.poll) return false;
+    this.#clearPollUsers();
+    this.poll = null;
+    this.patch.poll = true;
+    this.patch.vip = true; // VIP trở lại ghế
+    return true;
+  }
+
+  /** Gửi lại view cho mọi người đang hiện dưới sân để bỏ nhãn phe. */
+  #clearPollUsers() {
+    if (!this.poll) return;
+    const keys = [...this.poll.votes.keys()];
+    this.poll = null;
+    for (const k of keys) {
+      const u = this.users.get(k);
+      if (u) this.#markUser(u);
+    }
+  }
+
+  #recordVote(evt) {
+    const p = this.poll;
+    if (!p || p.status !== 'active') return;
+    const t = this.#normText(evt.text);
+    if (!t) return;
+    const side = t === p.keywords[0] ? 0 : t === p.keywords[1] ? 1 : -1;
+    if (side < 0) return;
+    const prev = p.votes.get(evt.userKey);
+    if (prev === side) return;
+    if (prev !== undefined) p.counts[prev] -= 1;
+    p.votes.set(evt.userKey, side);
+    p.counts[side] += 1;
+    this.patch.poll = true;
+    if (this.vipKeys.includes(evt.userKey)) this.patch.vip = true; // VIP đổi phe: overlay cập nhật vị trí lead
+  }
+
+  /** Đưa nhân vật đã bầu về đúng nửa sân (đổi phe hoặc đang đứng sai phía). */
+  #placeOnSide(userKey, now) {
+    const u = this.users.get(userKey);
+    if (!u || !u.visible || this.vipKeys.includes(userKey)) return;
+    const side = this.#sideOf(u);
+    if (side === null) return;
+    const wrong = side === 0 ? u.pos.x > 0.46 : u.pos.x < 0.54;
+    if (!wrong) return;
+    u.from = { ...u.pos };
+    u.pos = this.#randPos(u);
+    u.moveSeq += 1;
+    this.#markUser(u);
+  }
+
+  #finishPoll(now) {
+    const p = this.poll;
+    p.status = 'result';
+    p.result = p.counts[0] === p.counts[1] ? 'tie' : p.counts[0] > p.counts[1] ? 0 : 1;
+    p.resultUntil = now + p.resultSec * 1000;
+    this.patch.poll = true;
+    this.patch.effects.push({ type: 'pollWin', side: p.result === 'tie' ? null : p.result });
+  }
+
+  #tickPoll(now) {
+    const p = this.poll;
+    if (!p) return;
+    if (p.status === 'active' && now >= p.endsAt) this.#finishPoll(now);
+    else if (p.status === 'result' && now >= p.resultUntil) this.cancelPoll();
   }
 
   #removeUser(u) {
@@ -438,6 +576,7 @@ export class StageEngine {
 
   /** Xoá toàn bộ dữ liệu của Stage. */
   resetAll() {
+    this.poll = null;
     this.users.clear();
     this.visibleSet.clear();
     this.streaks.clear();
@@ -455,7 +594,7 @@ export class StageEngine {
   // ------------------------------------------------------------------ xuất dữ liệu
   /** Bản gọn (không tên/avatar) cho patch của người đã có trên overlay: giảm băng thông. */
   #slimView(u) {
-    return { key: u.userKey, hearts: u.hearts, pos: u.pos, from: u.from, moveSeq: u.moveSeq, zUntil: u.zUntil, greetUntil: u.greetUntil };
+    return { key: u.userKey, hearts: u.hearts, pos: u.pos, from: u.from, moveSeq: u.moveSeq, zUntil: u.zUntil, greetUntil: u.greetUntil, side: this.#sideOf(u) };
   }
 
   #fieldView(u) {
@@ -471,6 +610,7 @@ export class StageEngine {
       spawnedAt: u.spawnedAt,
       greetUntil: u.greetUntil,
       simulated: u.simulated,
+      side: this.#sideOf(u),
     };
   }
 
@@ -485,6 +625,7 @@ export class StageEngine {
         giftTotal: u.giftTotal,
         absent: this.#isAbsent(u, now),
         simulated: u.simulated,
+        side: this.#sideOf(u), // VIP đã bầu: xuống sân làm "lead" của phe mình
       };
     });
   }
@@ -499,6 +640,7 @@ export class StageEngine {
       settings: this.settings,
       users: [...this.visibleSet].map((k) => this.#fieldView(this.users.get(k))),
       vip: this.#vipView(now),
+      poll: this.#pollView(),
     };
   }
 
@@ -511,13 +653,13 @@ export class StageEngine {
   }
 
   #resetPatch() {
-    this.patch = { full: false, users: new Map(), removed: new Set(), vip: false, settings: false, effects: [], flashed: new Set(), fullViewKeys: new Set() };
+    this.patch = { full: false, users: new Map(), removed: new Set(), vip: false, settings: false, poll: false, effects: [], flashed: new Set(), fullViewKeys: new Set() };
   }
 
   /** Lấy và xoá các thay đổi tích luỹ; null nếu không có gì. Hub gọi định kỳ (~10 lần/giây) để gộp event. */
   drainPatch() {
     const p = this.patch;
-    const empty = !p.full && !p.users.size && !p.removed.size && !p.vip && !p.settings && !p.effects.length;
+    const empty = !p.full && !p.users.size && !p.removed.size && !p.vip && !p.settings && !p.poll && !p.effects.length;
     if (empty) return null;
     this.#resetPatch();
     this.seq += 1;
@@ -531,6 +673,7 @@ export class StageEngine {
       removed: [...p.removed],
       vip: p.vip ? this.#vipView(now) : undefined,
       settings: p.settings ? this.settings : undefined,
+      poll: p.poll ? this.#pollView() : undefined, // null = poll đã kết thúc
       effects: capEffects(p.effects),
     };
   }
@@ -559,6 +702,7 @@ export class StageEngine {
       vip: this.#vipView(now),
       fieldCount: this.visibleSet.size,
       userCount: this.users.size,
+      poll: this.#pollView(),
     };
   }
 }

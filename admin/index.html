@@ -109,6 +109,25 @@
             <div class="scroll"><table id="vipTable"></table></div>
           </div>
           <div class="card">
+            <h2>Bình chọn 2 đáp án</h2>
+            <p class="mut" style="margin:0 0 10px;font-size:12px">Khán giả bình luận đúng từ khoá để chọn; nhân vật của họ đứng sang nửa sân tương ứng. Hết giờ hiện kết quả vài giây rồi sân trở lại bình thường.</p>
+            <div class="grid2">
+              <label class="f" style="grid-column:1/-1">Câu hỏi (hiện trên overlay, tối đa 80 ký tự)<input id="pQ" maxlength="80" placeholder="Ví dụ: Ăn phở hay bún?"></label>
+              <label class="f">Đáp án A (nửa trái)<input id="pLA" maxlength="16" value="Phở"></label>
+              <label class="f">Đáp án B (nửa phải)<input id="pLB" maxlength="16" value="Bún"></label>
+              <label class="f">Từ khoá bình luận A<input id="pKA" maxlength="20" value="1"></label>
+              <label class="f">Từ khoá bình luận B<input id="pKB" maxlength="20" value="2"></label>
+              <label class="f">Thời lượng (giây, 10–600)<input id="pDur" type="number" min="10" max="600" value="60"></label>
+              <label class="f">Hiện kết quả (giây, 3–60)<input id="pRes" type="number" min="3" max="60" value="8"></label>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="btn pri" id="pStart">Bắt đầu bình chọn</button>
+              <button class="btn" id="pEnd">Kết thúc ngay</button>
+              <button class="btn dan" id="pCancel">Huỷ</button>
+            </div>
+            <div id="pStat" style="margin-top:10px"></div>
+          </div>
+          <div class="card">
             <h2>Thao tác</h2>
             <div class="row">
               <button class="btn dan" id="resetStage">Reset sân khấu</button>
@@ -154,6 +173,16 @@
               <input id="tBulk" type="number" min="1" max="60" value="12" style="width:90px">
               <button class="btn" id="tBulkGo">Thả tim ngẫu nhiên cho N người</button>
               <button class="btn" id="tBulkGift">Tặng quà ngẫu nhiên cho 5 người</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Thử bình chọn</h2>
+            <p class="mut" style="margin:0 0 10px;font-size:12px">Dùng từ khoá đã nhập ở tab Điều khiển trực tiếp. "Bầu" dùng tên người xem test ở trên.</p>
+            <div class="row">
+              <button class="btn" id="tVoteA">Bầu A</button>
+              <button class="btn" id="tVoteB">Bầu B</button>
+              <input id="tVoteN" type="number" min="1" max="60" value="20" style="width:90px">
+              <button class="btn" id="tVoteBulk">N người bầu ngẫu nhiên</button>
             </div>
           </div>
           <div class="card"><h2>Nhật ký</h2><div class="log" id="tLog"></div></div>
