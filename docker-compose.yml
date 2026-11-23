@@ -9,7 +9,7 @@
 
 services:
   app:
-    image: ${APP_IMAGE:?Hãy đặt APP_IMAGE trong file .env (vd ghcr.io/owner/repo:latest)}
+    image: ghcr.io/ngxuanviet/live-stand:latest
     pull_policy: always
     container_name: khan-dai-live
     restart: unless-stopped
