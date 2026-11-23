@@ -243,7 +243,9 @@ export function drawChar(c, look, fx, fy, state, t, o = {}) {
   const J = JERSEY[look.team];
   let dn = 0, lL = 0, lR = 0, aL = 0, aR = 0;
   const jump = o.jump || 0;
-  const up = state === 'jump';
+  const up = state === 'jump' || o.arms === 'up';
+  // tay lắc luân phiên (hiệu ứng nhún nhảy): mỗi nhịp một tay giơ lên
+  const swing = o.arms === 'swing' ? (Math.floor(t * 6) % 2 ? 1 : -1) : 0;
   if (state === 'idle' || state === 'sit' || state === 'look') dn = Math.floor(t * 2.5 + look.ph) % 2;
   if (state === 'walk') {
     const f = Math.floor(t * 8 + look.ph) % 4;
@@ -271,7 +273,7 @@ export function drawChar(c, look, fx, fy, state, t, o = {}) {
   }
   for (const s of [-1, 1]) {
     const ax = s < 0 ? fx - 8 : fx + 5;
-    const ua = up || (state === 'look' && s > 0);
+    const ua = up || (state === 'look' && s > 0) || (swing !== 0 && (s > 0) === (swing > 0));
     const ay = (ua ? tt - 3 : tt + 3) + (s < 0 ? aL : aR);
     R(c, ax, ay - 1, 3, ua ? 8 : 7, INK);
     R(c, ax + (s < 0 ? 1 : 0), ay, 2, 2, J.m);
@@ -323,6 +325,43 @@ export function badge(c, cx, cy, col) {
       if (d <= 5.2) R(c, cx + x, cy + y, 1, 1, d > 4.1 ? INK : col);
     }
 }
+/** Hình elip đặc bằng các hàng chữ nhật (giữ phong cách pixel). */
+export function ell(c, cx, cy, rx, ry, col, a) {
+  c.globalAlpha = a;
+  for (let d = -ry; d <= ry; d++) {
+    const w = Math.round(rx * Math.sqrt(1 - (d / ry) ** 2));
+    R(c, cx - w, cy + d, w * 2, 1, col);
+  }
+  c.globalAlpha = 1;
+}
+
+/**
+ * Đèn chiếu dưới chân người đang diễn (vẽ TRƯỚC nhân vật). mode: 'light' | 'strong'; full = false thì chỉ vẽ bản nhẹ.
+ * intensity 1..3: càng cao vòng sáng càng rộng, chùm sáng càng nhiều bậc, tia lấp lánh càng nhiều.
+ * Cố ý dùng cách vẽ rẻ (vài khối chữ nhật), không vẽ lại nhân vật và không phóng to nhân vật.
+ */
+export function drawSpot(c, x, y, mode, intensity, t, full) {
+  if (mode === 'off') return;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+  if (mode === 'light' || !full) {
+    ell(c, x, y + 1, full ? 11 : 8, 2, '#ffe9a8', 0.28 + pulse * 0.1);
+    return;
+  }
+  ell(c, x, y + 1, 14 + intensity * 2, 3, '#ffe9a8', 0.22 + pulse * 0.08);
+  ell(c, x, y + 1, 8 + intensity, 2, '#fff6d0', 0.4);
+  for (let k = 0; k < 2 + intensity; k++) {
+    c.globalAlpha = 0.13; // chùm sáng hình thang rất mờ, bậc thang đi lên đầu
+    R(c, x - 8 - k * 2, y - 12 - k * 9, 16 + k * 4, 9, '#fff7c8');
+  }
+  c.globalAlpha = 0.12;
+  R(c, x - 8, y - 32, 16, 32, '#fff3b0'); // khung sáng mờ phía sau thân
+  c.globalAlpha = 1;
+  for (let i = 0; i < intensity + 1; i++) {
+    const a = t * 3 + (i / (intensity + 1)) * Math.PI * 2;
+    spark(c, Math.round(x + Math.cos(a) * 17), Math.round(y - 14 + Math.sin(a) * 8), '#ffe27a', 0.85);
+  }
+}
+
 export function drawAura(c, cx, cy, t) {
   for (let i = 0; i < 5; i++) {
     c.globalAlpha = 0.09;

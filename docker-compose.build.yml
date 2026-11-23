@@ -1,0 +1,5 @@
+# Override để build ảnh tại máy thay vì kéo từ registry.
+services:
+  app:
+    build: .
+    pull_policy: never

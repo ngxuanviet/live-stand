@@ -72,6 +72,16 @@ Tab **Điều khiển trực tiếp → Bình chọn 2 đáp án**: nhập câu 
 - Mỗi sân khấu có một bình chọn tại một thời điểm; không lưu vào database nên khởi động lại server là kết thúc.
 - Cần nội dung bình luận từ TikTok. Lần đầu dùng hãy thử với live thật; nếu không nhận phiếu, bật `TIKTOK_DEBUG_LOG=1` và kiểm tra tên trường chứa nội dung bình luận trong `data/raw-events.jsonl` (hiện đọc `comment`, `content`, `text`).
 
+### Hiệu ứng cho người thả nhiều tim
+
+Ở tab **Luật & Giá**, thẻ **Hiệu ứng thả tim**: thêm các mốc rồi chọn hiệu ứng cho từng mốc. **Chưa thêm mốc nào thì tính năng tắt.**
+
+- **Mốc tích luỹ:** tổng tim của một người chạm 30, 100, 300... thì làm hành động lớn một lần (nhảy cẫng, nhún nhảy, xoay vòng, pháo giấy, lộn nhào, phóng lên trời, pháo hoa).
+- **Mốc dồn dập:** đủ X tim trong Y giây thì làm hành động nhỏ.
+- Tim ở đây là số `hearts` trong Dashboard, gồm cả thưởng follow, share, bình luận. Người đang ngồi ghế VIP cũng diễn: họ đứng lên, diễn rồi ngồi lại.
+- Người đang diễn luôn đứng trên cùng, có đèn chiếu (Tắt / Nhẹ / Mạnh), tuỳ chọn làm tối đám đông và bong bóng tên kèm "xN tim!".
+- Nút **Xem thử** chạy một hiệu ứng ngay trên overlay mà không đổi số tim. Trong Test Panel, mục **Thả tim liên tục** gửi nhiều lần thả tim nhỏ cho một người xem test để thử các mốc.
+
 ### Luật chơi tóm tắt
 
 - Người xem chỉ xuất hiện khi thả tim, tặng quà, follow, share hoặc bình luận; tên hiện một lần (3 giây) lúc mới xuất hiện.
@@ -139,7 +149,7 @@ Toàn bộ đồ họa được vẽ bằng code (không dùng ảnh có sẵn).
 npm install
 cp .env.example .env
 npm run dev          # chạy có tự khởi động lại
-npm test             # 50 test (logic game, router, API, bảo mật, trích xuất dữ liệu TikTok)
+npm test             # 90+ test (logic game, hiệu ứng thả tim, router, API, bảo mật, trích xuất dữ liệu TikTok)
 npm run bench        # đo tải server, xem bench/README.md
 ```
 

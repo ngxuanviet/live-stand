@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes, createHash } from 'node:crypto';
 import { StageEngine, DEFAULT_SETTINGS } from './stageEngine.js';
+import { HEART_EFFECTS, EFFECT_IDS, SPOTLIGHT_MODES, cleanTiers, TierError } from './heartEffects.js';
 import { createConnector, SUPPORTED_PLATFORMS } from '../connectors/index.js';
 import { makeEvent, EventType } from '../../shared/events.js';
 
@@ -105,6 +106,7 @@ export class Hub extends EventEmitter {
       token: s.token,
       settings: { ...DEFAULT_SETTINGS, ...s.settings },
       overlayUrl: `${base}/overlay?${q}`,
+      heartEffects: HEART_EFFECTS,
     };
   }
 
@@ -186,6 +188,23 @@ export class Hub extends EventEmitter {
     if (input.vipAbsentPolicy !== undefined) {
       if (!['keep', 'release'].includes(input.vipAbsentPolicy)) throw new HubError('vipAbsentPolicy phải là keep hoặc release');
       out.vipAbsentPolicy = input.vipAbsentPolicy;
+    }
+    for (const [key, kind] of [['tierTotal', 'total'], ['tierBurst', 'burst']]) {
+      if (input[key] === undefined) continue;
+      try {
+        out[key] = cleanTiers(kind, input[key]);
+      } catch (e) {
+        if (e instanceof TierError) throw new HubError(e.message);
+        throw e;
+      }
+    }
+    if (input.tierSpotlight !== undefined) {
+      if (!SPOTLIGHT_MODES.includes(input.tierSpotlight)) throw new HubError('tierSpotlight phải là off, light hoặc strong');
+      out.tierSpotlight = input.tierSpotlight;
+    }
+    if (input.tierDim !== undefined) {
+      if (typeof input.tierDim !== 'boolean') throw new HubError('tierDim phải là true hoặc false');
+      out.tierDim = input.tierDim;
     }
     if (input.giftValueOverrides !== undefined) {
       const o = {};
@@ -324,6 +343,34 @@ export class Hub extends EventEmitter {
   cancelPoll(stageId) {
     this.engine(stageId).cancelPoll();
     return { ok: true };
+  }
+
+  // ------------------------------------------------------------------ xem thử hiệu ứng mốc tim
+  /**
+   * Phát thử một hiệu ứng trên một người: theo `vipRank` (1..5), theo `userKey`, hoặc một người đang trên sân
+   * (không có ai thì tạo một người xem thử). Không đổi số tim.
+   */
+  previewEffect(stageId, input = {}) {
+    const engine = this.engine(stageId);
+    const effect = String(input.effect ?? '');
+    if (!EFFECT_IDS.includes(effect)) throw new HubError('Hiệu ứng không hợp lệ');
+    const intensity = input.level === undefined || input.level === '' ? 3 : Number(input.level);
+    if (!Number.isFinite(intensity) || intensity < 1 || intensity > 3) throw new HubError('Cấp phải từ 1 đến 3');
+    let userKey = null;
+    if (input.vipRank !== undefined && input.vipRank !== null && input.vipRank !== '') {
+      const rank = Number(input.vipRank);
+      if (!Number.isInteger(rank) || rank < 1 || rank > 5) throw new HubError('Hạng VIP phải từ 1 đến 5');
+      userKey = engine.vipKeys[rank - 1];
+      if (!userKey) throw new HubError('Ghế này đang trống');
+    } else if (input.userKey) {
+      userKey = String(input.userKey);
+      if (!engine.users.has(userKey)) throw new HubError('Không tìm thấy người dùng', 404);
+    } else {
+      const field = [...engine.visibleSet];
+      userKey = field.length ? field[Math.floor(Math.random() * field.length)] : this.simulate(stageId, { type: 'like', username: 'Xem thử', value: 1 }).userKey;
+    }
+    engine.previewTier(userKey, effect, intensity);
+    return { ok: true, userKey };
   }
 
   // ------------------------------------------------------------------ Test Panel

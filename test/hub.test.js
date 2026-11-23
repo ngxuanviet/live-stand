@@ -122,3 +122,69 @@ test('Giới hạn chiều cao vùng sân: cấu hình hợp lệ được lưu,
   assert.throws(() => hub.updateStage(st.id, { settings: { fieldHeightPx: -5 } }), HubError);
   assert.throws(() => hub.updateStage(st.id, { settings: { fieldHeightPx: 99999 } }), HubError);
 });
+
+test('hiệu ứng thả tim: cấu hình mốc hợp lệ được chuẩn hoá và lưu, mặc định rỗng', () => {
+  const { hub } = makeHub();
+  const st = hub.addStage({ name: 'T' });
+  assert.deepEqual(st.settings.tierTotal, []);
+  assert.deepEqual(st.settings.tierBurst, []);
+  assert.equal(st.settings.tierSpotlight, 'light');
+  assert.equal(st.settings.tierDim, false);
+  assert.equal(st.heartEffects.length, 7);
+  const upd = hub.updateStage(st.id, {
+    settings: {
+      tierTotal: [{ hearts: '30', effect: 'hop3' }, { hearts: 100, effect: 'spin' }],
+      tierBurst: [{ hearts: 10, windowSec: 5, effect: 'sway' }],
+      tierSpotlight: 'strong',
+      tierDim: true,
+    },
+  });
+  assert.deepEqual(upd.settings.tierTotal, [{ hearts: 30, effect: 'hop3' }, { hearts: 100, effect: 'spin' }]);
+  assert.equal(upd.settings.tierSpotlight, 'strong');
+  assert.equal(hub.engine(st.id).settings.tierDim, true);
+});
+
+test('hiệu ứng thả tim: từ chối cấu hình mốc sai', () => {
+  const { hub } = makeHub();
+  const st = hub.addStage({ name: 'T' });
+  const bad = (settings) => assert.throws(() => hub.updateStage(st.id, { settings }), HubError);
+  bad({ tierTotal: 'x' });
+  bad({ tierTotal: Array.from({ length: 9 }, (_, i) => ({ hearts: i + 1, effect: 'hop3' })) });
+  bad({ tierTotal: [{ hearts: 30, effect: 'hop3' }, { hearts: 30, effect: 'spin' }] }); // không tăng ngặt
+  bad({ tierTotal: [{ hearts: 0, effect: 'hop3' }] });
+  bad({ tierTotal: [{ hearts: 2000000, effect: 'hop3' }] });
+  bad({ tierTotal: [{ hearts: 10.5, effect: 'hop3' }] });
+  bad({ tierTotal: [{ hearts: 10, effect: 'khong-co' }] });
+  bad({ tierBurst: [{ hearts: 1, windowSec: 5, effect: 'sway' }] });
+  bad({ tierBurst: [{ hearts: 10, windowSec: 1, effect: 'sway' }] });
+  bad({ tierBurst: [{ hearts: 10, windowSec: 500, effect: 'sway' }] });
+  bad({ tierSpotlight: 'rat-manh' });
+  bad({ tierDim: 'co' });
+});
+
+test('hiệu ứng thả tim: xem thử trên người dưới sân, trên VIP, và các lỗi', () => {
+  const { hub } = makeHub();
+  const st = hub.addStage({ name: 'T' });
+  hub.simulate(st.id, { type: 'like', username: 'Fan', value: 3 });
+  hub.simulate(st.id, { type: 'gift', username: 'Rich', diamondValue: 100 });
+  hub.engine(st.id).drainPatch();
+  const a = hub.previewEffect(st.id, { effect: 'spin' }); // người dưới sân
+  assert.ok(a.userKey);
+  const b = hub.previewEffect(st.id, { effect: 'rocket', vipRank: 1, level: 2 });
+  assert.equal(b.userKey, hub.engine(st.id).vipKeys[0]);
+  const fx = hub.engine(st.id).drainPatch().effects.filter((e) => e.type === 'tier');
+  assert.equal(fx.length, 2);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'khong-co' }), HubError);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'spin', vipRank: 0 }), HubError);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'spin', vipRank: 6 }), HubError);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'spin', vipRank: 3 }), /trống/);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'spin', userKey: 'tiktok:khong-co' }), HubError);
+  assert.throws(() => hub.previewEffect(st.id, { effect: 'spin', level: 9 }), HubError);
+});
+
+test('hiệu ứng thả tim: xem thử khi sân trống thì tạo một người xem thử', () => {
+  const { hub } = makeHub();
+  const st = hub.addStage({ name: 'T' });
+  const r = hub.previewEffect(st.id, { effect: 'hop3' });
+  assert.ok(hub.engine(st.id).users.has(r.userKey));
+});

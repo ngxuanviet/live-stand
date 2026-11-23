@@ -1,11 +1,16 @@
-# Triển khai:   docker compose up -d --build
-# Kèm tunnel:   docker compose --profile tunnel up -d --build     (cần TUNNEL_TOKEN trong .env)
+# Dùng ảnh build sẵn từ GHCR (do GitHub Action .github/workflows/docker.yml đẩy lên).
+# Đặt trong .env:  APP_IMAGE=ghcr.io/<owner>/<repo>:latest   (chữ thường; có thể ghim tag, vd :1.2.3 hoặc :sha-abc1234)
+# Ảnh private thì đăng nhập trước:  docker login ghcr.io
+#
+# Triển khai:   docker compose pull && docker compose up -d
+# Kèm tunnel:   docker compose --profile tunnel up -d     (cần TUNNEL_TOKEN trong .env)
+# Muốn tự build tại máy:  docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 # Biến môi trường được đọc từ file .env cùng thư mục (xem .env.example).
 
 services:
   app:
-    build: .
-    image: khan-dai-live:latest
+    image: ${APP_IMAGE:?Hãy đặt APP_IMAGE trong file .env (vd ghcr.io/owner/repo:latest)}
+    pull_policy: always
     container_name: khan-dai-live
     restart: unless-stopped
     init: true

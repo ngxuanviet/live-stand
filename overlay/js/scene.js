@@ -1,4 +1,6 @@
-import { INK, SEAT, RANKCOL, R, charLook, chairBack, chairFront, drawChar, drawCrown, drawAura, badge, drawEffect, buildBackground, drawLights } from './art.js';
+import { INK, SEAT, RANKCOL, R, hash, charLook, chairBack, chairFront, drawChar, drawCrown, drawAura, badge, spark, drawSpot, drawEffect, buildBackground, drawLights } from './art.js';
+import { ANIM_MS, pose, particles, flightAmp } from './anims.js';
+import { sortField, planFocus, degrade, pickBubbles, tierLabel, DIM_ALPHA } from './focus.js';
 
 const MAX_FIELD_X_PAD = 14;
 const WALK_SPEED = 20; // px logic / giây (đi dạo)
@@ -54,6 +56,8 @@ export class Scene {
     this.lookAllUntil = 0;
     this.nextLookAll = Date.now() + 8000;
     this.fps = 0;
+    this.dimA = 0; // độ làm tối đám đông hiện tại (0..1, có easing)
+    this.lastDt = 0.033;
     this.layout(W, H, settings);
   }
 
@@ -104,6 +108,8 @@ export class Scene {
       // chỉ dành cho VIP
       rank: 0, giftTotal: 0, absent: false, seated: false,
       lead: false, // VIP đã bầu: rời ghế, xuống đứng làm "lead" của phe mình
+      // hiệu ứng thả tim: anim đang diễn, pendingAnim đang chờ nhân vật dừng lại, focusUntil (giờ client) để giữ bong bóng tên
+      anim: null, pendingAnim: null, focusUntil: 0, tierInfo: null, performing: false,
     };
   }
 
@@ -168,7 +174,7 @@ export class Scene {
         ch.y = ch.ty = to.y;
       }
       this.chars.set(u.key, ch);
-    } else if (u.moveSeq > ch.moveSeq) {
+    } else if (u.moveSeq > ch.moveSeq && !ch.anim) {
       ch.tx = to.x;
       ch.ty = to.y;
       ch.state = 'walk';
@@ -187,6 +193,9 @@ export class Scene {
   #leave(ch) {
     const { Lw } = this.lay;
     ch.leaving = true;
+    ch.anim = null;
+    ch.pendingAnim = null;
+    ch.performing = false;
     ch.tx = ch.x < Lw / 2 ? -20 : Lw + 20;
     ch.ty = ch.y;
     ch.state = 'walk';
@@ -234,8 +243,10 @@ export class Scene {
       vc.avatarUrl = v.avatar;
       vc.giftTotal = v.giftTotal;
       vc.absent = v.absent;
-      vc.tx = seat.x;
-      vc.ty = seat.y;
+      if (!vc.performing) {
+        vc.tx = seat.x;
+        vc.ty = seat.y;
+      }
       vc.lead = v.side === 0 || v.side === 1;
       vc.side = vc.lead ? v.side : null;
     }
@@ -275,13 +286,71 @@ export class Scene {
     if (!ch) return;
     const now = Date.now();
     const { Lw } = this.lay;
+    if (e.type === 'tier') {
+      this.#startTier(ch, e, now);
+      return;
+    }
     if (e.type === 'spawn') this.fx.push({ type: 'poof', x: Math.max(8, Math.min(Lw - 8, ch.x)), y: ch.y, t0: now, dur: 600 });
     else if (e.type === 'flash') this.fx.push({ type: 'flash', follow: ch, t0: now, dur: 1100 });
     else if (e.type === 'gift') this.texts.push({ text: `+${fmt(e.points)} ◆`, follow: ch, t0: now, dur: 1800 });
   }
 
+  // ------------------------------------------------------------------ hiệu ứng thả tim
+  /** Nhận hiệu ứng mốc từ server: xếp vào hàng chờ; VIP đang ngồi thì bước ra trước ghế để diễn như người thường. */
+  #startTier(ch, e, now) {
+    if (ch.leaving || !ANIM_MS[e.effect]) return;
+    if (ch.anim && e.kind === 'burst') return; // đang diễn lớn thì bỏ qua mốc dồn dập
+    if (this.vips.has(ch.key) && ch.absent) return;
+    const all = [...this.chars.values(), ...this.vips.values()];
+    const active = all.filter((c) => c !== ch && (c.anim || c.pendingAnim)).length;
+    const dg = degrade(e.effect, active, this.chars.size);
+    ch.anim = null;
+    ch.pendingAnim = { id: dg.id, lod: dg.lod, kind: e.kind, intensity: e.intensity || 1, hearts: e.hearts || 0, seed: ((hash(ch.key) + now) & 0xffff) || 1, queuedAt: now };
+    ch.tierInfo = { kind: e.kind, hearts: e.hearts || 0 };
+    ch.focusUntil = now + 1500 + ANIM_MS[dg.id] + 800;
+    if (this.vips.has(ch.key) && ch.seated && !ch.lead) {
+      // đứng lên khỏi ghế, bước ra phía trước để diễn; diễn xong sẽ đi về ngồi lại
+      const seat = this.lay.seats[ch.rank - 1];
+      ch.performing = true;
+      ch.seated = false;
+      ch.x = seat.x;
+      ch.y = seat.y;
+      ch.tx = seat.x;
+      ch.ty = seat.y + 18;
+      ch.state = 'walk';
+    }
+  }
+
+  /** Chuyển hàng chờ thành hoạt hoạ khi nhân vật đã dừng; kết thúc hoạt hoạ thì trả VIP về ghế. */
+  #tickAnim(c, now, ready) {
+    if (c.pendingAnim && (ready || now - c.pendingAnim.queuedAt > 1500)) {
+      const a = c.pendingAnim;
+      c.pendingAnim = null;
+      c.anim = { ...a, t0: now, dur: ANIM_MS[a.id] };
+      if (this.settings.tierSpotlight === 'strong') this.#lookAround(c, now);
+    }
+    if (c.anim && now >= c.anim.t0 + c.anim.dur) {
+      c.anim = null;
+      if (c.performing && c.rank) {
+        const seat = this.lay.seats[c.rank - 1];
+        c.tx = seat.x;
+        c.ty = seat.y;
+        c.performing = false;
+      }
+    }
+  }
+
+  /** Chế độ tiêu điểm mạnh: người xung quanh ngước nhìn người đang diễn. */
+  #lookAround(c, now) {
+    for (const o of this.chars.values()) {
+      if (o === c || o.anim || Math.hypot(o.x - c.x, o.y - c.y) > 60) continue;
+      o.lookUntil = now + 1200;
+    }
+  }
+
   // ------------------------------------------------------------------ cập nhật
   update(dt) {
+    this.lastDt = dt;
     const now = Date.now();
     const { Lw, playTop, playBottom } = this.lay;
     if (now > this.nextLookAll) {
@@ -299,6 +368,10 @@ export class Scene {
       return false;
     };
     for (const [k, ch] of this.chars) {
+      if (ch.anim) {
+        this.#tickAnim(ch, now, true); // đứng yên diễn
+        continue;
+      }
       const arrived = step(ch, now < ch.runUntil ? RUN_SPEED : WALK_SPEED);
       if (arrived) {
         if (ch.leaving) {
@@ -307,7 +380,8 @@ export class Scene {
         }
         ch.state = 'idle';
       }
-      if (ch.state === 'idle' && !ch.leaving) {
+      if (ch.pendingAnim) this.#tickAnim(ch, now, ch.state !== 'walk');
+      if (ch.state === 'idle' && !ch.leaving && !ch.pendingAnim) {
         if (now > ch.nextLook) {
           ch.lookUntil = now + 2000;
           ch.nextLook = now + 9000 + Math.random() * 10000;
@@ -332,15 +406,21 @@ export class Scene {
         vc.y = vc.ty;
         continue;
       }
+      if (vc.anim) {
+        this.#tickAnim(vc, now, true); // đang diễn: đứng yên tại chỗ
+        continue;
+      }
       const arrived = step(vc, VIP_SPEED);
+      if (vc.pendingAnim) this.#tickAnim(vc, now, arrived);
       if (vc.lead) {
         vc.state = arrived ? 'idle' : 'walk'; // lead đứng tại chỗ (không ngồi lại ghế)
         continue;
       }
-      if (arrived) {
+      if (arrived && !vc.pendingAnim && !vc.anim) {
+        vc.performing = false;
         vc.seated = true;
         this.fx.push({ type: 'sparkle', x: vc.x, y: vc.y - 22, t0: now, dur: 900 });
-      } else vc.state = 'walk';
+      } else vc.state = arrived ? 'idle' : 'walk';
     }
     this.fx = this.fx.filter((f) => now - f.t0 < f.dur);
     this.texts = this.texts.filter((f) => now - f.t0 < f.dur);
@@ -415,12 +495,21 @@ export class Scene {
       M.globalAlpha = 1;
     }
 
-    // ---- sân chơi: người dưới sân + VIP đang đi tới ghế, xếp theo trục Y (z-index), người vừa qua mốc nổi lên trên
+    // ---- sân chơi: người dưới sân + VIP đang đi tới ghế / đứng diễn, xếp theo trục Y (z-index).
+    // Thứ tự: người thường -> (lớp làm tối) -> người đang diễn hiệu ứng (luôn trên cùng, có đèn chiếu).
     const field = [...this.chars.values(), ...walkingVips];
-    const boost = (c) => (sNow < c.zUntil || c.lead ? 1000 : 0); // lead luôn nổi trên cùng
-    field.sort((a, b) => a.y + boost(a) - (b.y + boost(b)));
+    const isPerf = (c) => !!(c.anim || c.pendingAnim);
+    const performers = field.filter(isPerf);
+    const plan = planFocus(
+      performers.map((c) => {
+        const i = c.anim || c.pendingAnim;
+        return { key: c.key, kind: i.kind, intensity: i.intensity, t0: c.anim ? c.anim.t0 : i.queuedAt };
+      }),
+      { mode: this.settings.tierSpotlight || 'light', dim: !!this.settings.tierDim },
+    );
+    this.dimA += ((plan.dim ? 1 : 0) - this.dimA) * Math.min(1, this.lastDt * 8); // vào/ra mượt, không giật
     const leads = [];
-    for (const ch of field) {
+    for (const ch of sortField(field.filter((c) => !isPerf(c)), sNow)) {
       const { state, jump } = this.#charState(ch, now);
       if (ch.lead) {
         // vòng sáng dưới chân theo màu phe + hào quang để lead nổi bật giữa đám đông
@@ -435,9 +524,23 @@ export class Scene {
         drawCrown(M, Math.round(ch.x), info.headTop, t);
         leads.push(ch);
       }
-      if (sNow < ch.greetUntil) bubbles.push({ ch, headTop: info.headTop });
+      if (now < ch.focusUntil && ch.tierInfo) {
+        // vừa diễn xong (ví dụ VIP đang đi về ghế): vẫn giữ bong bóng ưu tiên cho tới hết thời gian
+        bubbles.push({ ch, headTop: info.headTop, priority: 2, greetUntil: ch.focusUntil, title: tierLabel(ch.tierInfo.kind, ch.tierInfo.hearts) });
+      } else if (sNow < ch.greetUntil) bubbles.push({ ch, headTop: info.headTop, priority: 1, greetUntil: ch.greetUntil });
     }
-
+    if (this.dimA > 0.01) {
+      M.globalAlpha = DIM_ALPHA * this.dimA;
+      M.fillStyle = '#000';
+      M.fillRect(0, lay.vipY + 14, lay.Lw, lay.Lh - (lay.vipY + 14));
+      M.globalAlpha = 1;
+    }
+    performers.sort((a, b) => a.y - b.y);
+    for (const ch of performers) {
+      const info = this.#drawPerformer(ch, now, t, plan);
+      if (ch.lead) leads.push(ch);
+      bubbles.push({ ch, headTop: info.headTop, priority: 2, greetUntil: ch.focusUntil, title: ch.tierInfo ? tierLabel(ch.tierInfo.kind, ch.tierInfo.hearts) : '' });
+    }
     // ---- hiệu ứng
     for (const f of this.fx) {
       const p = (now - f.t0) / f.dur;
@@ -460,39 +563,10 @@ export class Scene {
       this.#text(trunc(ch.name, 10), ch.x, ch.y + 8, 7, '#ffffff');
       this.#text(`◆ ${fmt(ch.giftTotal)}`, ch.x, ch.y + 16, 6.5, RANKCOL[Math.max(0, ch.rank - 1)]);
     }
-    // Giảm rối khi phòng đông: tối đa MAX_BUBBLES bong bóng, ưu tiên cái mới nhất, không cho đè lên nhau
-    bubbles.sort((a, b) => b.ch.greetUntil - a.ch.greetUntil);
+    // Giảm rối khi phòng đông: bong bóng chào thường tối đa MAX_BUBBLES cái mới nhất; bong bóng của người
+    // đang diễn (kèm dòng "xN tim!") luôn được hiện và đặt trước; không cho đè lên nhau
     const placed = [];
-    let shown = 0;
-    for (const { ch, headTop } of bubbles) {
-      if (shown >= MAX_BUBBLES) break;
-      const name = trunc(ch.name, 10);
-      const w = Math.max(34, name.length * 5.4 + 10);
-      const x = Math.max(2, Math.min(lay.Lw - w - 2, ch.x - w / 2)); // không tràn ra mép màn hình
-      const tx = Math.max(x + 4, Math.min(x + w - 4, ch.x)); // đuôi bong bóng luôn hướng về nhân vật
-      let y = headTop - 14;
-      const hit = (yy) => placed.some((r) => x < r.x + r.w + 1 && x + w + 1 > r.x && yy < r.y + 12 && yy + 12 > r.y);
-      for (let k = 0; k < 3 && hit(y); k++) y -= 11; // thử đẩy lên trên
-      if (hit(y)) continue;
-      placed.push({ x, y, w });
-      shown += 1;
-      const S = this.S;
-      M.fillStyle = '#fffbe8';
-      M.strokeStyle = INK;
-      M.lineWidth = 2;
-      M.fillRect(x * S, y * S, w * S, 10 * S);
-      M.strokeRect(x * S, y * S, w * S, 10 * S);
-      M.beginPath();
-      M.moveTo((tx - 2) * S, (y + 10) * S);
-      M.lineTo((tx + 2) * S, (y + 10) * S);
-      M.lineTo(tx * S, (y + 13) * S);
-      M.fill();
-      M.font = `700 ${6.5 * S}px "Pixelify Sans",monospace`;
-      M.textAlign = 'center';
-      M.textBaseline = 'middle';
-      M.fillStyle = INK;
-      M.fillText(name, (x + w / 2) * S, (y + 5.5) * S);
-    }
+    for (const b of pickBubbles(bubbles, MAX_BUBBLES)) this.#drawBubble(b, placed);
     this.#drawPoll(sNow);
     for (const f of this.texts) {
       const p = (now - f.t0) / f.dur;
@@ -513,6 +587,83 @@ export class Scene {
     }
     if (this.debug) {
       this.#text(`${this.fps.toFixed(0)} fps · sân ${this.chars.size} · VIP ${this.vips.size}`, 4, 8, 6, '#5ee7ff', INK, 'left');
+    }
+  }
+
+  /** Vẽ một người đang diễn: đèn chiếu dưới chân, tư thế theo hoạt hoạ, hạt hiệu ứng. Trả về { headTop }. */
+  #drawPerformer(ch, now, t, plan) {
+    const { M, lay } = this;
+    const a = ch.anim;
+    const meta = a || ch.pendingAnim;
+    drawSpot(M, Math.round(ch.x), Math.round(ch.y), this.settings.tierSpotlight || 'light', meta.intensity || 1, t, plan.full.has(ch.key));
+    const amp = flightAmp(ch.y, lay.vipY + 26);
+    let state;
+    let jump = 0;
+    let ps = null;
+    let p = 0;
+    if (a) {
+      p = Math.min(1, Math.max(0, (now - a.t0) / a.dur));
+      ps = pose(a.id, p, { amp });
+      state = ps.state;
+      jump = ps.jump;
+    } else ({ state, jump } = this.#charState(ch, now));
+    const x = ch.x + (ps ? ps.dx : 0);
+    M.save();
+    if (ps && (ps.rot || ps.sx !== 1)) {
+      const mid = ch.y - jump - 14; // tâm thân: xoay / co ngang quanh đây
+      M.translate(x, mid);
+      if (ps.rot) M.rotate(ps.rot);
+      M.scale(ps.sx, 1);
+      M.translate(-x, -mid);
+    }
+    const info = drawChar(M, ch.look, x, ch.y, state, t, { jump, arms: ps ? ps.arms : undefined, head: this.avatars.head(ch.key, ch.avatarUrl, state === 'look') });
+    if (ch.rank === 1 || ch.lead) drawCrown(M, Math.round(x), info.headTop, t);
+    M.restore();
+    if (a) {
+      for (const h of particles(a.id, p, { x: Math.round(x), y: Math.round(ch.y), jump, seed: a.seed, lod: a.lod, amp })) {
+        if (h.spark) spark(M, h.x, h.y, h.c, h.a);
+        else {
+          M.globalAlpha = h.a;
+          R(M, h.x, h.y, h.w, h.h, h.c);
+        }
+      }
+      M.globalAlpha = 1;
+    }
+    return info;
+  }
+
+  /** Bong bóng tên (độ phân giải thật). Người diễn có thêm dòng tiêu đề nên cao hơn; luôn kẹp trong canvas. Gọi khi transform là đơn vị. */
+  #drawBubble(b, placed) {
+    const { M, S, lay } = this;
+    const { ch, headTop, title } = b;
+    const name = trunc(ch.name, 10);
+    const h = title ? 18 : 10;
+    const w = Math.max(title ? 40 : 34, Math.max(name.length, title ? title.length : 0) * 5.4 + 10);
+    const x = Math.max(2, Math.min(lay.Lw - w - 2, ch.x - w / 2)); // không tràn ra mép màn hình
+    const tx = Math.max(x + 4, Math.min(x + w - 4, ch.x)); // đuôi bong bóng luôn hướng về nhân vật
+    let y = Math.max(1, headTop - (title ? 22 : 14));
+    const hit = (yy) => placed.some((r) => x < r.x + r.w + 1 && x + w + 1 > r.x && yy < r.y + r.h + 2 && yy + h + 2 > r.y);
+    for (let k = 0; k < 3 && hit(y); k++) y = Math.max(1, y - (h + 1)); // thử đẩy lên trên
+    if (hit(y)) return;
+    placed.push({ x, y, w, h });
+    M.fillStyle = '#fffbe8';
+    M.strokeStyle = INK;
+    M.lineWidth = 2;
+    M.fillRect(x * S, y * S, w * S, h * S);
+    M.strokeRect(x * S, y * S, w * S, h * S);
+    M.beginPath();
+    M.moveTo((tx - 2) * S, (y + h) * S);
+    M.lineTo((tx + 2) * S, (y + h) * S);
+    M.lineTo(tx * S, (y + h + 3) * S);
+    M.fill();
+    M.font = `700 ${6.5 * S}px "Pixelify Sans",monospace`;
+    M.textAlign = 'center';
+    M.textBaseline = 'middle';
+    M.fillStyle = INK;
+    M.fillText(name, (x + w / 2) * S, (y + 5.5) * S);
+    if (title) {
+      M.fillStyle = '#d6336c';
+      M.fillText(title, (x + w / 2) * S, (y + 13) * S);
     }
   }
 

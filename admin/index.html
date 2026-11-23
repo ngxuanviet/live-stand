@@ -85,6 +85,35 @@
               <button class="btn sm" id="giftAdd">Thêm</button>
             </div>
           </div>
+          <div class="card" id="tierCard">
+            <h2>Hiệu ứng thả tim</h2>
+            <p class="mut" style="margin:0 0 10px;font-size:12px">Người xem thả nhiều tim thì làm hành động đặc biệt, mốc càng cao hiệu ứng càng ấn tượng. "Tim" là số <b>hearts</b> trong Dashboard, gồm cả thưởng follow, share và bình luận. Chỉ diễn <b>một lần</b> mỗi lần chạm mốc. Người ngồi ghế VIP cũng diễn: họ đứng lên, diễn rồi ngồi lại. <b>Chưa có mốc nào = tắt tính năng.</b></p>
+            <h3 class="sub">Mốc tích luỹ (tổng tim cả phiên)</h3>
+            <div class="scroll"><table id="tierTotalTable"></table></div>
+            <div class="row" style="margin:8px 0 14px"><button class="btn sm" id="tierTotalAdd">+ Thêm mốc</button></div>
+            <h3 class="sub">Mốc dồn dập (đủ X tim trong Y giây)</h3>
+            <div class="scroll"><table id="tierBurstTable"></table></div>
+            <div class="row" style="margin:8px 0 14px"><button class="btn sm" id="tierBurstAdd">+ Thêm mốc</button></div>
+            <div class="grid2">
+              <label class="f">Làm nổi bật người đang diễn
+                <select id="tierSpotlight" data-k="tierSpotlight"><option value="off">Tắt</option><option value="light">Nhẹ (vòng sáng dưới chân)</option><option value="strong">Mạnh (chùm sáng, mọi người nhìn lên)</option></select>
+                <small>Người diễn luôn đứng trên cùng và có bong bóng tên kèm "xN tim!"</small>
+              </label>
+              <label class="chk" style="align-self:end"><input type="checkbox" id="tierDim"> Làm tối đám đông khi có người diễn</label>
+            </div>
+            <div id="tierErr" class="err" style="margin-top:8px"></div>
+            <h3 class="sub" style="margin-top:14px">Xem thử trên overlay</h3>
+            <div class="row">
+              <select id="pvEffect"></select>
+              <select id="pvTarget">
+                <option value="field">Một người dưới sân</option>
+                <option value="1">VIP hạng 1</option><option value="2">VIP hạng 2</option><option value="3">VIP hạng 3</option><option value="4">VIP hạng 4</option><option value="5">VIP hạng 5</option>
+              </select>
+              <select id="pvLevel"><option value="1">Cấp 1</option><option value="2">Cấp 2</option><option value="3" selected>Cấp 3 (mạnh nhất)</option></select>
+              <button class="btn pri" id="pvGo">Xem thử</button>
+            </div>
+            <p class="mut" style="margin:6px 0 0;font-size:12px">Không đổi số tim. Cấp quyết định độ mạnh của đèn chiếu. Ghế VIP trống thì không xem thử được.</p>
+          </div>
           <div class="card">
             <h2>Chiều cao vùng sân</h2>
             <p class="mut" style="margin:0 0 8px;font-size:12px">Giới hạn chiều cao của vùng nhân vật đi lại ở phía dưới hàng VIP (tính bằng điểm ảnh của canvas). Để <b>0</b> = tự lấp đầy tới đáy. Sân cỏ kết thúc ở giới hạn này và phía dưới trong suốt. Lưu ngay, xem trước bên phải.</p>
@@ -173,6 +202,17 @@
               <input id="tBulk" type="number" min="1" max="60" value="12" style="width:90px">
               <button class="btn" id="tBulkGo">Thả tim ngẫu nhiên cho N người</button>
               <button class="btn" id="tBulkGift">Tặng quà ngẫu nhiên cho 5 người</button>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Thả tim liên tục (thử hiệu ứng thả tim)</h2>
+            <p class="mut" style="margin:0 0 8px;font-size:12px">Gửi nhiều lần thả tim nhỏ cho "Tên người xem test" ở trên để thử mốc tích luỹ và mốc dồn dập. Người test được giữ sống khi còn hoạt động. Muốn thử trên VIP: tặng quà cho cùng tên này trước.</p>
+            <div class="row">
+              <label>Tim mỗi lần <input id="tRapidN" type="number" min="1" max="100" value="1" style="width:80px"></label>
+              <label>Số lần <input id="tRapidTimes" type="number" min="1" max="500" value="40" style="width:80px"></label>
+              <label>Cách nhau (ms) <input id="tRapidMs" type="number" min="50" max="5000" value="150" style="width:90px"></label>
+              <button class="btn pri" id="tRapidGo">Bắt đầu</button>
+              <button class="btn" id="tRapidStop">Dừng</button>
             </div>
           </div>
           <div class="card">

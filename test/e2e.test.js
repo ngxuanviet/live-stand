@@ -34,7 +34,7 @@ before(async () => {
     env: { ...process.env, PORT: String(PORT), DB_PATH: join(dir, 'e2e.db'), ADMIN_PASSWORD: 'pw-test', SESSION_SECRET: 'secret-test' },
     stdio: 'ignore',
   });
-  for (let i = 0; i < 50; i++) {
+  for (let i = 0; i < 150; i++) { // chờ tối đa ~15 giây (máy bận có thể khởi động chậm)
     try {
       if ((await fetch(BASE + '/healthz')).ok) return;
     } catch {
@@ -146,4 +146,53 @@ test('Test Panel: tên có dấu tiếng Việt không bị trùng userId', asyn
   const c = (await sim('Nhà giàu')).json.userKey;
   assert.notEqual(a, b);
   assert.equal(a, c);
+});
+
+test('hiệu ứng thả tim: cấu hình mốc, thả tim vượt mốc thì overlay nhận effect tier (cả VIP), xem thử qua API', async () => {
+  const stage = (await api('/api/stages', { method: 'POST', body: { name: 'Tier' } })).json;
+  assert.equal(stage.heartEffects.length, 7);
+  const bad = await api(`/api/stages/${stage.id}`, { method: 'PUT', body: { settings: { tierTotal: [{ hearts: 30, effect: 'khong-co' }] } } });
+  assert.equal(bad.status, 400);
+  const ok = await api(`/api/stages/${stage.id}`, {
+    method: 'PUT',
+    body: { settings: { tierTotal: [{ hearts: 30, effect: 'hop3' }, { hearts: 100, effect: 'spin' }], tierSpotlight: 'strong', tierDim: true } },
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.settings.tierTotal.length, 2);
+
+  const sock = io(BASE + '/overlay', { auth: { stage_id: stage.id, token: stage.token }, reconnection: false });
+  const init = await once(sock, 'init');
+  assert.equal(init.snapshot.settings.tierTotal.length, 2, 'mốc nằm trong settings gửi cho overlay');
+
+  // người dưới sân
+  let next = once(sock, 'patch');
+  await api(`/api/stages/${stage.id}/simulate`, { method: 'POST', body: { type: 'like', username: 'Fan', value: 30 } });
+  let patch = await next;
+  const t1 = patch.effects.find((e) => e.type === 'tier');
+  assert.equal(t1.effect, 'hop3');
+  assert.equal(t1.kind, 'total');
+  assert.equal(t1.vip, false);
+  assert.ok(t1.ms > 0);
+
+  // người ngồi VIP cũng diễn
+  next = once(sock, 'patch');
+  await api(`/api/stages/${stage.id}/simulate`, { method: 'POST', body: { type: 'gift', username: 'Rich', diamondValue: 500 } });
+  await next;
+  next = once(sock, 'patch');
+  await api(`/api/stages/${stage.id}/simulate`, { method: 'POST', body: { type: 'like', username: 'Rich', value: 100 } });
+  patch = await next;
+  const t2 = patch.effects.find((e) => e.type === 'tier');
+  assert.equal(t2.effect, 'spin');
+  assert.equal(t2.vip, true);
+
+  // xem thử: ghế trống -> 400, ghế 1 -> phát effect preview
+  assert.equal((await api(`/api/stages/${stage.id}/preview-effect`, { method: 'POST', body: { effect: 'rocket', vipRank: 3 } })).status, 400);
+  next = once(sock, 'patch');
+  assert.equal((await api(`/api/stages/${stage.id}/preview-effect`, { method: 'POST', body: { effect: 'rocket', vipRank: 1, level: 2 } })).status, 200);
+  patch = await next;
+  const t3 = patch.effects.find((e) => e.type === 'tier');
+  assert.equal(t3.kind, 'preview');
+  assert.equal(t3.intensity, 2);
+  assert.equal((await api(`/api/stages/${stage.id}/preview-effect`, { method: 'POST', body: { effect: 'rocket' }, auth: false })).status, 401);
+  sock.close();
 });

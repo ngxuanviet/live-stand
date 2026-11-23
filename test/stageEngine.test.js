@@ -428,3 +428,208 @@ test('poll: VIP đã bầu có side trong view VIP (xuống làm lead), chưa b�
   assert.deepEqual(vip(), { 'tiktok:v1': null, 'tiktok:v2': null });
   assert.ok(h.engine.drainPatch().vip); // báo overlay cho VIP về ghế
 });
+
+// ---------------------------------------------------------------- hiệu ứng theo mốc tim
+const TOTAL = [{ hearts: 30, effect: 'hop3' }, { hearts: 100, effect: 'spin' }, { hearts: 300, effect: 'rocket' }];
+const BURST = [{ hearts: 10, windowSec: 5, effect: 'sway' }, { hearts: 30, windowSec: 10, effect: 'confetti' }];
+const tiers = (engine) => (engine.drainPatch()?.effects || []).filter((e) => e.type === 'tier');
+
+test('mốc tim: mặc định không có mốc nào thì không phát hiệu ứng', () => {
+  const { engine, like } = setup();
+  like('a', 500);
+  assert.deepEqual(tiers(engine), []);
+});
+
+test('mốc tổng: bắn đúng một lần khi chạm ngưỡng, không bắn lại ở lần thả tim kế', () => {
+  const { engine, like } = setup({ tierTotal: TOTAL });
+  like('a', 29);
+  assert.deepEqual(tiers(engine), []);
+  like('a', 1);
+  const [e] = tiers(engine);
+  assert.equal(e.effect, 'hop3');
+  assert.equal(e.kind, 'total');
+  assert.equal(e.level, 1);
+  assert.equal(e.hearts, 30);
+  like('a', 1);
+  assert.deepEqual(tiers(engine), []);
+});
+
+test('mốc tổng: một event vượt nhiều mốc chỉ phát mốc cao nhất', () => {
+  const { engine, like } = setup({ tierTotal: TOTAL });
+  like('a', 150);
+  const list = tiers(engine);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].effect, 'spin');
+  assert.equal(list[0].level, 2);
+});
+
+test('mốc tổng: độ mạnh tăng theo vị trí mốc (1 đến 3)', () => {
+  const { engine, like } = setup({ tierTotal: TOTAL });
+  like('a', 30);
+  assert.equal(tiers(engine)[0].intensity, 1);
+  like('a', 300);
+  assert.equal(tiers(engine)[0].intensity, 3);
+});
+
+test('mốc tim: follow / share / bình luận cũng là tim và có thể chạm mốc', () => {
+  for (const type of [EventType.FOLLOW, EventType.SHARE, EventType.CHAT]) {
+    const { engine, ev } = setup({ heartsPerMove: 10, tierTotal: [{ hearts: 10, effect: 'hop3' }] });
+    engine.handle(ev('a', type));
+    assert.equal(tiers(engine)[0]?.effect, 'hop3', type);
+  }
+});
+
+test('mốc dồn dập: đủ X tim trong Y giây thì bắn, quá cửa sổ thì không', () => {
+  const a = setup({ tierBurst: [BURST[0]] });
+  a.like('a', 4);
+  a.clock.t += 1000;
+  a.like('a', 6);
+  const [e] = tiers(a.engine);
+  assert.equal(e.effect, 'sway');
+  assert.equal(e.kind, 'burst');
+
+  const b = setup({ tierBurst: [BURST[0]] });
+  b.like('a', 6);
+  b.clock.t += 6000; // quá cửa sổ 5 giây
+  b.like('a', 6);
+  assert.deepEqual(tiers(b.engine), []);
+});
+
+test('mốc dồn dập: có khoảng nghỉ, không bắn lại mỗi lần thả tim', () => {
+  const { engine, clock, like } = setup({ tierBurst: [BURST[0]] });
+  like('a', 10);
+  assert.equal(tiers(engine).length, 1);
+  clock.t += 1000;
+  like('a', 10); // còn trong khoảng nghỉ
+  assert.deepEqual(tiers(engine), []);
+  clock.t += 5000;
+  like('a', 10); // hết khoảng nghỉ
+  assert.equal(tiers(engine).length, 1);
+});
+
+test('mốc tim: mốc tổng thắng mốc dồn dập khi cùng một event', () => {
+  const { engine, like } = setup({ tierTotal: [{ hearts: 10, effect: 'hop3' }], tierBurst: [{ hearts: 5, windowSec: 5, effect: 'sway' }] });
+  like('a', 10);
+  const list = tiers(engine);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].kind, 'total');
+});
+
+test('mốc tim: hai hiệu ứng của cùng một người trong một patch chỉ còn hiệu ứng cao nhất', () => {
+  const { engine, like } = setup({ tierTotal: TOTAL });
+  like('a', 30);
+  like('a', 70); // 100
+  const list = tiers(engine);
+  assert.equal(list.length, 1);
+  assert.equal(list[0].effect, 'spin');
+});
+
+test('mốc tim: lưu rồi nạp lại không bắn lại; bw/bwCool không được lưu', () => {
+  const a = setup({ tierTotal: TOTAL, tierBurst: BURST });
+  a.like('x', 30);
+  const rows = JSON.parse(JSON.stringify(a.engine.exportUsers()));
+  assert.equal('bw' in rows[0], false);
+  assert.equal('bwCool' in rows[0], false);
+  const b = setup({ tierTotal: TOTAL });
+  b.engine.importUsers(rows);
+  b.like('x', 1);
+  assert.deepEqual(tiers(b.engine), []);
+  b.like('x', 70); // chạm 100 thì vẫn bắn bình thường
+  assert.equal(tiers(b.engine)[0]?.effect, 'spin');
+});
+
+test('mốc tim: reset sân khấu kèm tim thì tính lại từ đầu', () => {
+  const { engine, like } = setup({ tierTotal: TOTAL });
+  like('a', 30);
+  tiers(engine);
+  engine.resetStage({ hearts: true });
+  engine.drainPatch();
+  like('a', 30);
+  assert.equal(tiers(engine)[0]?.effect, 'hop3');
+});
+
+test('mốc tim: thêm mốc thấp hơn số tim đang có không bắn hồi tố', () => {
+  const { engine, like } = setup({ tierTotal: [{ hearts: 100, effect: 'spin' }] });
+  like('a', 50);
+  tiers(engine);
+  engine.setSettings({ tierTotal: [{ hearts: 20, effect: 'hop3' }, { hearts: 100, effect: 'spin' }] });
+  like('a', 1);
+  assert.deepEqual(tiers(engine), []);
+});
+
+test('mốc tim: người diễn được nổi lên trên cùng và hiện tên suốt thời gian diễn', () => {
+  const { engine, clock, like } = setup({ zBoostSec: 1, tierTotal: [{ hearts: 30, effect: 'fireworks' }] }); // zBoostSec nhỏ để thấy rõ phần kéo dài của hiệu ứng
+  like('a', 30);
+  const p = engine.drainPatch();
+  const u = engine.users.get('tiktok:a');
+  assert.equal(u.zUntil, clock.t + 2600 + 800);
+  assert.equal(u.greetUntil, clock.t + 2600 + 800);
+  const view = p.users.find((v) => v.key === 'tiktok:a');
+  assert.equal(view.zUntil, u.zUntil, 'view gửi cho overlay có zUntil mới');
+  assert.equal(view.greetUntil, u.greetUntil);
+});
+
+test('mốc tim: quá nhiều hiệu ứng trong một patch thì giữ tối đa 12 và vẫn không bị capEffects cắt', () => {
+  const { engine, like } = setup({ maxSlots: 200, minStaySec: 0, tierTotal: [{ hearts: 1, effect: 'hop3' }] });
+  for (let i = 0; i < 100; i++) like('u' + i);
+  const p = engine.drainPatch();
+  assert.equal(p.effects.filter((e) => e.type === 'tier').length, 12);
+  assert.ok(p.effects.length <= 60);
+});
+
+test('mốc tim: VIP đang ngồi ghế cũng diễn, nhưng không bị di chuyển hay chớp', () => {
+  const { engine, gift, like } = setup({ tierTotal: [{ hearts: 30, effect: 'spin' }] });
+  gift('v', { diamondValue: 100 });
+  engine.drainPatch();
+  like('v', 30);
+  const p = engine.drainPatch();
+  const t = p.effects.find((e) => e.type === 'tier');
+  assert.equal(t.userKey, 'tiktok:v');
+  assert.equal(t.vip, true);
+  assert.ok(!p.effects.some((e) => e.type === 'flash'));
+  assert.equal(p.users.length, 0, 'VIP không nằm trong danh sách người dưới sân');
+  assert.ok(p.vip, 'bảng VIP vẫn được cập nhật');
+});
+
+test('mốc tim: VIP mất ghế rồi lên lại không bắn lại mốc đã qua', () => {
+  const { engine, gift, like } = setup({ tierTotal: [{ hearts: 30, effect: 'spin' }] });
+  gift('v', { diamondValue: 100 });
+  like('v', 30);
+  tiers(engine);
+  engine.kick('tiktok:v');
+  gift('v', { diamondValue: 1 });
+  engine.drainPatch();
+  like('v', 1);
+  assert.deepEqual(tiers(engine), []);
+});
+
+test('xem thử hiệu ứng: trên VIP và người dưới sân, không đổi số tim', () => {
+  const { engine, gift, like } = setup();
+  gift('v', { diamondValue: 100 });
+  like('a', 5);
+  engine.drainPatch();
+  assert.equal(engine.previewTier('tiktok:v', 'rocket', 2), true);
+  let list = tiers(engine);
+  assert.equal(list[0].kind, 'preview');
+  assert.equal(list[0].vip, true);
+  assert.equal(list[0].intensity, 2);
+  assert.equal(engine.previewTier('tiktok:a', 'confetti'), true);
+  list = tiers(engine);
+  assert.equal(list[0].effect, 'confetti');
+  assert.equal(engine.users.get('tiktok:a').hearts, 5);
+  assert.equal(engine.previewTier('tiktok:nobody', 'confetti'), false);
+  assert.equal(engine.previewTier('tiktok:a', 'khong-co'), false);
+});
+
+test('người xem test được giữ sống khi còn hoạt động, hết hạn sau lần hoạt động cuối', () => {
+  const { engine, ev, clock } = setup({ simulatedTtlSec: 30 });
+  engine.handle(ev('t', EventType.LIKE, { value: 1, simulated: true }));
+  clock.t += 20_000;
+  engine.handle(ev('t', EventType.LIKE, { value: 1, simulated: true }));
+  clock.t += 20_000; // đã 40 giây từ lúc tạo nhưng mới 20 giây từ lần hoạt động cuối
+  engine.tick();
+  assert.equal(engine.users.size, 1);
+  clock.t += 11_000;
+  engine.tick();
+  assert.equal(engine.users.size, 0);
+});

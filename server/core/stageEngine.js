@@ -1,9 +1,22 @@
 import { EventType } from '../../shared/events.js';
+import { effectMs, tierIntensity, EFFECT_IDS, BURST_COOLDOWN_MS } from './heartEffects.js';
 
 export const VIP_SEATS = 5;
 const STREAK_TTL_MS = 60_000;
 const MAX_EFFECTS_PER_PATCH = 60;
-const KEEP_EFFECTS = /^(vip|gift)/; // luôn giữ hiệu ứng VIP / quà
+const MAX_TIER_PER_PATCH = 12;
+const KEEP_EFFECTS = /^(vip|gift|tier|pollWin)/; // luôn giữ hiệu ứng VIP / quà / mốc tim / thắng poll
+const TIER_KIND_RANK = { total: 3, burst: 2, preview: 1 };
+
+/** Ưu tiên khi quá nhiều hiệu ứng mốc trong một patch: VIP > mốc tổng > dồn dập > xem thử, rồi độ mạnh. */
+const tierPriority = (e) => (e.vip ? 1000 : 0) + (TIER_KIND_RANK[e.kind] || 0) * 10 + (e.intensity || 0);
+
+function limitTier(list) {
+  const tiers = list.filter((e) => e.type === 'tier');
+  if (tiers.length <= MAX_TIER_PER_PATCH) return list;
+  const keep = new Set([...tiers].sort((a, b) => tierPriority(b) - tierPriority(a)).slice(0, MAX_TIER_PER_PATCH));
+  return list.filter((e) => e.type !== 'tier' || keep.has(e));
+}
 
 function capEffects(list) {
   if (list.length <= MAX_EFFECTS_PER_PATCH) return list;
@@ -25,7 +38,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   greetSec: 3, // thời gian hiện tên lúc xuất hiện lần đầu
   actionGreetSec: 5, // follow / share / bình luận: hiện tên lâu hơn một chút
   actionCooldownSec: 10, // khoảng nghỉ giữa hai lần được thưởng cho cùng một người (chống spam)
-  simulatedTtlSec: 30, // người xem test tự xoá
+  simulatedTtlSec: 30, // người xem test tự xoá (tính từ lần hoạt động cuối)
+  tierTotal: Object.freeze([]), // [{hearts, effect}] mốc tích luỹ; rỗng = tắt
+  tierBurst: Object.freeze([]), // [{hearts, windowSec, effect}] mốc dồn dập; rỗng = tắt
+  tierSpotlight: 'light', // off | light | strong: đèn chiếu cho người đang diễn
+  tierDim: false, // làm tối đám đông khi có người diễn
   fieldHeightPx: 0, // giới hạn chiều cao vùng sân dưới hàng VIP (px thật của canvas); 0 = tự động lấp đầy
   safeBottomPct: 0, // chừa trống ở đáy (% chiều cao); mặc định 0: không lề, chỉnh vị trí trong OBS
   giftValueOverrides: {}, // { giftId: diamond } ghi đè giá quà
@@ -120,6 +137,8 @@ export class StageEngine {
         kicked: false,
         simulated: false,
         expiresAt: 0,
+        bw: [], // cửa sổ tim dồn dập (chỉ trong bộ nhớ)
+        bwCool: 0,
       };
       if (evt.simulated) {
         u.simulated = true;
@@ -137,6 +156,7 @@ export class StageEngine {
     if (evt.avatar) u.avatar = evt.avatar;
     u.lastActive = now;
     u.leftAt = 0;
+    if (u.simulated && u.expiresAt) u.expiresAt = now + this.settings.simulatedTtlSec * 1000; // giữ người test sống khi đang được dùng
   }
 
   #onJoin(evt, now) {
@@ -160,6 +180,7 @@ export class StageEngine {
     if (!this.vipKeys.includes(u.userKey) && Math.floor(u.hearts / n) > Math.floor(prev / n)) {
       this.#move(u, now);
     }
+    this.#checkTiers(u, prev, count, now); // cả VIP đang ngồi cũng diễn
     this.#markUser(u);
     if (this.vipKeys.includes(u.userKey)) this.patch.vip = true;
   }
@@ -187,8 +208,83 @@ export class StageEngine {
       this.#activate(u, now);
       if (rewarded && u.visible && Math.floor(u.hearts / n) > Math.floor(prev / n)) this.#move(u, now);
     }
+    if (u.hearts > prev) this.#checkTiers(u, prev, u.hearts - prev, now); // thưởng follow/share/bình luận cũng là tim
     this.#markUser(u);
     if (seated) this.patch.vip = true;
+  }
+
+  // ------------------------------------------------------------------ hiệu ứng theo mốc tim
+  /**
+   * Kiểm tra mốc tích luỹ và mốc dồn dập sau khi hearts tăng `added` (từ `prev`). Chạy cho mọi người, kể cả VIP đang ngồi.
+   * Mốc tổng dựa trên việc hearts CẮT QUA ngưỡng trong chính sự kiện này nên restart hay sửa ngưỡng không làm bắn lại.
+   * Một sự kiện vượt nhiều mốc chỉ phát mốc cao nhất; mốc tổng thắng mốc dồn dập.
+   */
+  #checkTiers(u, prev, added, now) {
+    const total = this.settings.tierTotal;
+    const burst = this.settings.tierBurst;
+    if (!total?.length && !burst?.length) return;
+    let fired = null;
+    for (let i = (total?.length ?? 0) - 1; i >= 0; i--) {
+      const t = total[i];
+      if (prev < t.hearts && u.hearts >= t.hearts) {
+        fired = { effect: t.effect, kind: 'total', level: i + 1, intensity: tierIntensity(i, total.length), hearts: t.hearts };
+        break;
+      }
+    }
+    if (burst?.length && added > 0 && now >= (u.bwCool || 0)) {
+      const maxMs = Math.max(...burst.map((b) => b.windowSec)) * 1000;
+      u.bw = (u.bw || []).filter((e) => now - e.t <= maxMs);
+      u.bw.push({ t: now, n: added });
+      if (!fired) {
+        for (let i = burst.length - 1; i >= 0; i--) {
+          const b = burst[i];
+          const from = now - b.windowSec * 1000;
+          let sum = 0;
+          for (const e of u.bw) if (e.t >= from) sum += e.n;
+          if (sum >= b.hearts) {
+            fired = { effect: b.effect, kind: 'burst', level: i + 1, intensity: tierIntensity(i, burst.length), hearts: b.hearts };
+            break;
+          }
+        }
+      }
+    }
+    if (!fired) return;
+    u.bw = [];
+    u.bwCool = now + BURST_COOLDOWN_MS; // không bắn lại mỗi lần thả tim kế tiếp
+    this.#pushTier(u, fired, now);
+  }
+
+  /**
+   * Phát hiệu ứng mốc cho một người. Cũng kéo dài zUntil (nổi lên trên cùng) và greetUntil (bong bóng tên) suốt thời gian diễn.
+   * Dedupe: mỗi người chỉ giữ một hiệu ứng mốc trong mỗi patch (ưu tiên tổng > dồn dập > xem thử, rồi độ mạnh).
+   */
+  #pushTier(u, fired, now) {
+    const ms = effectMs(fired.effect);
+    const seated = this.vipKeys.includes(u.userKey);
+    const eff = { type: 'tier', userKey: u.userKey, effect: fired.effect, kind: fired.kind, level: fired.level, intensity: fired.intensity, hearts: fired.hearts, ms, vip: seated };
+    const idx = this.patch.tierIdx.get(u.userKey);
+    if (idx === undefined) {
+      this.patch.tierIdx.set(u.userKey, this.patch.effects.length);
+      this.patch.effects.push(eff);
+    } else if (tierPriority(eff) >= tierPriority(this.patch.effects[idx])) {
+      this.patch.effects[idx] = eff;
+    }
+    u.zUntil = Math.max(u.zUntil || 0, now + ms + 800);
+    if (!seated) {
+      u.greeted = true;
+      u.greetUntil = Math.max(u.greetUntil || 0, now + ms + 800);
+    }
+    this.dirty = true;
+  }
+
+  /** Xem thử một hiệu ứng trên một người (Dashboard). Không đổi số tim. Trả false nếu không có người đó / hiệu ứng lạ. */
+  previewTier(userKey, effect, intensity = 3) {
+    const u = this.users.get(userKey);
+    if (!u || !EFFECT_IDS.includes(effect)) return false;
+    const now = this.now();
+    this.#pushTier(u, { effect, kind: 'preview', level: 0, intensity: Math.min(3, Math.max(1, Math.round(intensity) || 1)), hearts: 0 }, now);
+    this.#markUser(u);
+    return true;
   }
 
   #onGift(evt, now) {
@@ -556,6 +652,8 @@ export class StageEngine {
         u.greetUntil = 0;
         u.moveSeq = 0;
         u.zUntil = 0;
+        u.bw = [];
+        u.bwCool = 0;
       }
     }
     this.#fullSync();
@@ -653,7 +751,7 @@ export class StageEngine {
   }
 
   #resetPatch() {
-    this.patch = { full: false, users: new Map(), removed: new Set(), vip: false, settings: false, poll: false, effects: [], flashed: new Set(), fullViewKeys: new Set() };
+    this.patch = { full: false, users: new Map(), removed: new Set(), vip: false, settings: false, poll: false, effects: [], flashed: new Set(), fullViewKeys: new Set(), tierIdx: new Map() };
   }
 
   /** Lấy và xoá các thay đổi tích luỹ; null nếu không có gì. Hub gọi định kỳ (~10 lần/giây) để gộp event. */
@@ -674,19 +772,22 @@ export class StageEngine {
       vip: p.vip ? this.#vipView(now) : undefined,
       settings: p.settings ? this.settings : undefined,
       poll: p.poll ? this.#pollView() : undefined, // null = poll đã kết thúc
-      effects: capEffects(p.effects),
+      effects: capEffects(limitTier(p.effects)),
     };
   }
 
   // ------------------------------------------------------------------ lưu / nạp
   exportUsers() {
-    return [...this.users.values()].map((u) => ({ ...u, visible: u.visible }));
+    // bw / bwCool chỉ ở trong bộ nhớ nên không lưu
+    return [...this.users.values()].map(({ bw, bwCool, ...rest }) => rest);
   }
 
   importUsers(rows) {
     this.users.clear();
     this.visibleSet.clear();
     for (const r of rows) {
+      r.bw = [];
+      r.bwCool = 0;
       this.users.set(r.userKey, r);
       if (r.visible) this.visibleSet.add(r.userKey);
     }

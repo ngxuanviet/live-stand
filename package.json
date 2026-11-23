@@ -13,7 +13,8 @@
     "dev": "node --watch --disable-warning=ExperimentalWarning --env-file-if-exists=.env server/index.js",
     "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js",
     "bench": "node --disable-warning=ExperimentalWarning bench/serverLoad.mjs",
-    "bench:stress": "node --disable-warning=ExperimentalWarning bench/stressServer.mjs"
+    "bench:stress": "node --disable-warning=ExperimentalWarning bench/stressServer.mjs",
+    "mockup": "node design/serve.mjs"
   },
   "devDependencies": {
     "socket.io-client": "^4.8.4"

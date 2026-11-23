@@ -66,6 +66,9 @@ export function createAdminApi(hub, config) {
   api.post('/stages/:id/poll/end', wrap((req) => hub.endPoll(req.params.id)));
   api.delete('/stages/:id/poll', wrap((req) => hub.cancelPoll(req.params.id)));
 
+  // Xem thử hiệu ứng thả tim
+  api.post('/stages/:id/preview-effect', wrap((req) => hub.previewEffect(req.params.id, req.body || {})));
+
   // Test Panel
   api.post('/stages/:id/simulate', wrap((req) => hub.simulate(req.params.id, req.body || {})));
 

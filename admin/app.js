@@ -26,7 +26,7 @@ const VIP_FIELDS = [
 
 const NAMES = ['Minh Anh', 'Bảo Ngọc', 'Tuấn Kiệt', 'Thu Hà', 'Hoàng Long', 'Mai Linh', 'Đức Huy', 'Ngọc Trâm', 'Quốc Bảo', 'Khánh Vy', 'Gia Hân', 'Việt Cường', 'Lan Phương', 'Thanh Tùng', 'Hải Yến', 'Anh Khoa', 'Trúc Quỳnh', 'Nhật Nam', 'Bích Phượng', 'Đăng Khôi'];
 
-const S = { sources: [], stages: [], stageId: localStorage.getItem('stageId') || '', tab: 'routing', vip: [], live: null, gifts: {}, pollTimer: null };
+const S = { sources: [], stages: [], stageId: localStorage.getItem('stageId') || '', tab: 'routing', vip: [], live: null, gifts: {}, tiers: { total: [], burst: [] }, pollTimer: null };
 
 // ------------------------------------------------------------------ tiện ích
 async function api(method, path, body) {
@@ -344,6 +344,11 @@ function renderRules() {
   $('#vipFields [data-k=vipAbsentPolicy]').value = set.vipAbsentPolicy;
   S.gifts = { ...(set.giftValueOverrides || {}) };
   renderGifts();
+  S.tiers = { total: (set.tierTotal || []).map((t) => ({ ...t })), burst: (set.tierBurst || []).map((t) => ({ ...t })) };
+  $('#tierSpotlight').value = set.tierSpotlight || 'light';
+  $('#tierDim').checked = !!set.tierDim;
+  $('#tierErr').textContent = '';
+  renderTiers();
   $('#fieldH').value = set.fieldHeightPx || 0;
   $('#safe').value = set.safeBottomPct;
   $('#safeVal').textContent = `${set.safeBottomPct}%`;
@@ -371,10 +376,88 @@ $('#giftTable').addEventListener('click', (e) => {
   }
 });
 
+// ---- Hiệu ứng thả tim: hai bảng mốc sửa được (trạng thái cục bộ như S.gifts, lưu cùng nút "Lưu cấu hình")
+const effectList = () => stage()?.heartEffects || [];
+const effectOpts = (sel) => effectList().map((e) => `<option value="${esc(e.id)}" ${e.id === sel ? 'selected' : ''}>${esc(e.label)}</option>`).join('');
+
+function renderTiers() {
+  const row = (kind, t, i) => `<tr>
+    <td><input type="number" min="${kind === 'total' ? 1 : 2}" data-tt="${kind}" data-i="${i}" data-f="hearts" value="${esc(t.hearts)}"></td>
+    ${kind === 'burst' ? `<td><input type="number" min="2" max="120" data-tt="burst" data-i="${i}" data-f="windowSec" value="${esc(t.windowSec)}"></td>` : ''}
+    <td><select data-tt="${kind}" data-i="${i}" data-f="effect">${effectOpts(t.effect)}</select></td>
+    <td><button class="btn sm" data-tt-try="${kind}" data-i="${i}" title="Xem thử hiệu ứng này">Thử</button> <button class="btn sm dan" data-tt-del="${kind}" data-i="${i}">Xoá</button></td></tr>`;
+  const empty = (cols) => `<tr><td class="empty" colspan="${cols}">Chưa có mốc nào</td></tr>`;
+  $('#tierTotalTable').innerHTML = `<tr><th>Đủ số tim</th><th>Hiệu ứng</th><th></th></tr>${S.tiers.total.map((t, i) => row('total', t, i)).join('') || empty(3)}`;
+  $('#tierBurstTable').innerHTML = `<tr><th>Số tim</th><th>Trong (giây)</th><th>Hiệu ứng</th><th></th></tr>${S.tiers.burst.map((t, i) => row('burst', t, i)).join('') || empty(4)}`;
+  $('#pvEffect').innerHTML = effectOpts($('#pvEffect').value || 'spin');
+}
+
+/** Kiểm tra giống phía server để báo lỗi ngay trước khi lưu. Trả về chuỗi lỗi hoặc ''. */
+function validateTiers() {
+  for (const [kind, label, lo, hi] of [['total', 'Mốc tích luỹ', 1, 1000000], ['burst', 'Mốc dồn dập', 2, 1000]]) {
+    const list = S.tiers[kind];
+    if (list.length > 8) return `${label}: tối đa 8 mốc`;
+    let prev = 0;
+    for (let i = 0; i < list.length; i++) {
+      const t = list[i];
+      if (!Number.isInteger(t.hearts) || t.hearts < lo || t.hearts > hi) return `${label} #${i + 1}: số tim phải là số nguyên từ ${lo} đến ${hi}`;
+      if (t.hearts <= prev) return `${label} #${i + 1}: số tim phải lớn hơn mốc trước`;
+      prev = t.hearts;
+      if (kind === 'burst' && (!Number.isInteger(t.windowSec) || t.windowSec < 2 || t.windowSec > 120)) return `${label} #${i + 1}: số giây phải là số nguyên từ 2 đến 120`;
+    }
+  }
+  return '';
+}
+
+$('#tierCard').addEventListener('input', (e) => {
+  const el = e.target;
+  if (!el.dataset.tt) return;
+  const t = S.tiers[el.dataset.tt][Number(el.dataset.i)];
+  if (t) t[el.dataset.f] = el.dataset.f === 'effect' ? el.value : Number(el.value);
+});
+for (const kind of ['total', 'burst']) {
+  $(`#tier${kind === 'total' ? 'Total' : 'Burst'}Add`).addEventListener('click', () => {
+    const list = S.tiers[kind];
+    if (list.length >= 8) return toast('Tối đa 8 mốc', true);
+    const last = list[list.length - 1];
+    const ids = effectList().map((x) => x.id);
+    const effect = ids[Math.min(list.length, ids.length - 1)] || 'hop3';
+    list.push(kind === 'total' ? { hearts: last ? last.hearts * 3 : 30, effect } : { hearts: last ? last.hearts * 2 : 10, windowSec: last ? last.windowSec : 5, effect });
+    renderTiers();
+  });
+}
+$('#tierCard').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-tt-del]');
+  if (del) {
+    S.tiers[del.dataset.ttDel].splice(Number(del.dataset.i), 1);
+    renderTiers();
+    return;
+  }
+  const tr = e.target.closest('[data-tt-try]');
+  if (tr) {
+    const t = S.tiers[tr.dataset.ttTry][Number(tr.dataset.i)];
+    if (t) await previewEffect(t.effect, Number(tr.dataset.i) === 0 ? 1 : 3);
+  }
+});
+
+async function previewEffect(effect, level) {
+  const target = $('#pvTarget').value;
+  const body = { effect, level: level ?? Number($('#pvLevel').value) };
+  if (target !== 'field') body.vipRank = Number(target);
+  await act(() => api('POST', `/stages/${S.stageId}/preview-effect`, body));
+}
+$('#pvGo').addEventListener('click', () => previewEffect($('#pvEffect').value));
+
 $('#saveRules').addEventListener('click', async () => {
+  const err = validateTiers();
+  $('#tierErr').textContent = err;
+  if (err) return toast(err, true);
   const settings = {};
   $$('#tab-rules [data-k]').forEach((el) => (settings[el.dataset.k] = el.tagName === 'SELECT' ? el.value : Number(el.value)));
   settings.giftValueOverrides = S.gifts;
+  settings.tierTotal = S.tiers.total;
+  settings.tierBurst = S.tiers.burst;
+  settings.tierDim = $('#tierDim').checked;
   settings.safeBottomPct = Number($('#safe').value);
   settings.fieldHeightPx = Math.max(0, Number($('#fieldH').value) || 0);
   const g = await act(() => api('PUT', `/stages/${S.stageId}`, { settings }), 'Đã lưu cấu hình');
@@ -564,6 +647,28 @@ $('#tBulkGo').addEventListener('click', async () => {
     }));
   }
   log(`Thả tim ngẫu nhiên cho ${n} người`);
+});
+
+// Thả tim liên tục: để thử mốc tích luỹ / dồn dập cho một người xem test
+let rapidRun = 0;
+$('#tRapidStop').addEventListener('click', () => (rapidRun = 0));
+$('#tRapidGo').addEventListener('click', async () => {
+  const name = $('#tName').value.trim() || 'Tester';
+  const n = Math.min(100, Math.max(1, +$('#tRapidN').value || 1));
+  const times = Math.min(500, Math.max(1, +$('#tRapidTimes').value || 1));
+  const gap = Math.min(5000, Math.max(50, +$('#tRapidMs').value || 150));
+  const run = ++rapidRun;
+  let sent = 0;
+  for (; sent < times && run === rapidRun; sent++) {
+    try {
+      await api('POST', `/stages/${S.stageId}/simulate`, { type: 'like', username: name, avatar: avatarFor(name), value: n });
+    } catch (e) {
+      toast(e.message, true);
+      break;
+    }
+    await new Promise((r) => setTimeout(r, gap));
+  }
+  log(`Thả tim liên tục · ${name}: ${sent} lần x ${n} tim${run === rapidRun ? '' : ' (đã dừng)'}`);
 });
 
 $('#tBulkGift').addEventListener('click', async () => {

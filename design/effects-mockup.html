@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mockup hieu ung tha tim</title>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#14161c;--panel:#1d2029;--line:#323849;--tx:#e8eaf0;--mut:#9aa1b4;--acc:#ffd23f}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.45 system-ui,"Segoe UI",sans-serif}
+  header{padding:12px 16px;border-bottom:1px solid var(--line)}
+  header h1{margin:0;font-size:16px}
+  header p{margin:2px 0 0;color:var(--mut);font-size:12px}
+  main{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-start}
+  #stage{position:relative;border:1px solid var(--line);background:linear-gradient(180deg,#2d7a3c,#1e5a2b);width:min(100%,640px)}
+  #stage.checker{background:conic-gradient(#3a3d48 25%,#2b2e38 0 50%,#3a3d48 0 75%,#2b2e38 0) 0 0/24px 24px}
+  canvas{display:block;width:100%;height:auto;image-rendering:pixelated}
+  #ctl{flex:1;min-width:300px;max-width:560px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+  h2{margin:0 0 8px;font-size:12px;color:var(--acc);text-transform:uppercase;letter-spacing:.05em}
+  .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  button,select{background:#262a36;color:var(--tx);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font:inherit;cursor:pointer}
+  button:hover{border-color:var(--mut)}
+  button.pri{background:var(--acc);color:#1a1530;border-color:var(--acc);font-weight:600}
+  button.on{border-color:var(--acc);color:var(--acc)}
+  label{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:13px}
+  small{color:var(--mut)}
+  ul{margin:6px 0 0;padding-left:18px;color:var(--mut);font-size:12px}
+  li b{color:var(--tx)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Mockup hiệu ứng thả tim (bản xem thiết kế)</h1>
+  <p>Dùng chính mã vẽ của overlay (nhân vật, ghế, avatar nét). Các hiệu ứng, tiêu điểm và việc VIP đứng lên diễn là bản thử, chưa nối vào server.</p>
+</header>
+<main>
+  <div id="stage" class="checker"><canvas id="c"></canvas></div>
+  <div id="ctl">
+    <div class="card">
+      <h2>1. Chọn hiệu ứng (diễn trên người được chọn)</h2>
+      <div class="row" id="effBtns"></div>
+      <div class="row" style="margin-top:8px">
+        <label>Diễn trên
+          <select id="target">
+            <option value="crowd">Một người dưới sân</option>
+            <option value="vip1">VIP hạng 1 (ngai vàng)</option>
+            <option value="vip2">VIP hạng 2</option>
+            <option value="vip4">VIP hạng 4</option>
+          </select>
+        </label>
+        <label>Cấp mốc
+          <select id="level"><option value="1">1 (thấp)</option><option value="2">2</option><option value="3" selected>3 (cao)</option></select>
+        </label>
+        <label>Loại
+          <select id="kind"><option value="total">Tích luỹ (lớn)</option><option value="burst">Dồn dập (nhỏ)</option></select>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>2. Làm nổi bật người diễn</h2>
+      <div class="row">
+        <label>Đèn chiếu
+          <select id="spot"><option value="off">Tắt</option><option value="light">Nhẹ</option><option value="strong" selected>Mạnh</option></select>
+        </label>
+        <label><input type="checkbox" id="dim" checked> Làm tối đám đông</label>
+        <label><input type="checkbox" id="look" checked> Đám đông nhìn lên (chỉ chế độ Mạnh)</label>
+      </div>
+    </div>
+    <div class="card">
+      <h2>3. Kịch bản thử</h2>
+      <div class="row">
+        <button class="pri" id="seq">Diễn lần lượt cả 7 hiệu ứng</button>
+        <button id="multi">3 người diễn cùng lúc</button>
+        <button id="vipseq">VIP 1, 2 và 4 diễn nối tiếp</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <label>Tốc độ
+          <select id="speed"><option value="1">Bình thường</option><option value="0.5">Chậm 0,5x</option><option value="0.25">Rất chậm 0,25x</option></select>
+        </label>
+        <label>Nền xem thử
+          <select id="bgsel"><option value="checker">Caro</option><option value="game">Game giả</option><option value="black">Đen</option></select>
+        </label>
+        <button id="pause">Tạm dừng</button>
+        <button id="stepB" title="Lùi 0,1 giây (khi tạm dừng)">◀ 0,1s</button>
+        <button id="stepF" title="Tiến 0,1 giây (khi tạm dừng)">0,1s ▶</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Ghi chú thiết kế</h2>
+      <ul>
+        <li><b>Nổi lên trên cùng:</b> người diễn luôn đứng trước mọi người, kể cả khi đang bị che.</li>
+        <li><b>Bong bóng tên:</b> luôn hiện kèm dòng "xN tim!", không bị cắt bởi giới hạn bong bóng.</li>
+        <li><b>VIP:</b> bước ra trước ghế, diễn như người thường rồi ngồi lại. Ghế lúc đó để trống.</li>
+        <li><b>Nhiều người cùng diễn:</b> chỉ 1 người giữ đèn chiếu và làm tối; tối đa 2 người đầy đủ, người thứ 3 chỉ nhảy nhẹ.</li>
+        <li>Hiệu ứng "Nhún nhảy" ở bản thử dùng dáng đi tại chỗ; bản thật sẽ có tay lắc riêng.</li>
+      </ul>
+    </div>
+  </div>
+</main>
+
+<div id="fileWarn" style="display:none;margin:16px;padding:14px 16px;border:1px solid #7a2f38;background:#2a1519;border-radius:10px;color:#ffb3bb">
+  <b>Mockup cần chạy qua máy chủ, không mở trực tiếp bằng file.</b><br>
+  Trình duyệt chặn nạp mã vẽ khi mở bằng <code>file://</code> nên chỉ thấy nền caro trống. Hãy chạy lệnh
+  <code>npm run mockup</code> trong thư mục dự án rồi mở <code>http://localhost:3070/design/effects-mockup.html</code>.
+</div>
+<script>
+  if (location.protocol === 'file:' || (location.protocol === 'data:')) document.getElementById('fileWarn').style.display = 'block';
+  window.addEventListener('error', (e) => { document.getElementById('fileWarn').style.display = 'block'; });
+</script>
+<script type="module">
+import { INK, FACE, SEAT, RANKCOL, R, charLook, chairBack, chairFront, drawChar, drawCrown, drawAura, badge, spark, rng, plainFace, processFaceHi, squashFace, buildHeadLayers, buildBackground, drawLights } from '../overlay/js/art.js';
+import { computeLayout } from '../overlay/js/scene.js';
+
+// ---------------------------------------------------------------- cảnh
+const W = 1080, H = 1080;
+const lay = computeLayout(W, H, {});
+const S = lay.S;
+const cv = document.getElementById('c');
+cv.width = W; cv.height = H;
+const M = cv.getContext('2d');
+const bg = buildBackground(lay);
+const { Lw, Lh, playTop, playBottom, seats } = lay;
+
+const EFFECTS = [
+  { id: 'hop3', label: 'Nhảy cẫng', ms: 1400 },
+  { id: 'sway', label: 'Nhún nhảy', ms: 2000 },
+  { id: 'spin', label: 'Xoay vòng', ms: 1200 },
+  { id: 'confetti', label: 'Pháo giấy', ms: 1800 },
+  { id: 'flip', label: 'Lộn nhào', ms: 1100 },
+  { id: 'rocket', label: 'Phóng lên trời', ms: 2200 },
+  { id: 'fireworks', label: 'Pháo hoa', ms: 2600 },
+];
+const EFF = Object.fromEntries(EFFECTS.map((e) => [e.id, e]));
+
+const NAMES = ['Minh Anh', 'Bảo Ngọc', 'Tuấn Kiệt', 'Thu Hà', 'Hoàng Long', 'Mai Linh', 'Đức Huy', 'Ngọc Trâm', 'Quốc Bảo', 'Khánh Vy', 'Gia Hân', 'Việt Cường', 'Lan Phương', 'Thanh Tùng', 'Hải Yến', 'Anh Khoa', 'Trúc Quỳnh', 'Nhật Nam'];
+const avatarUrl = (i) => (i % 2 ? `https://i.pravatar.cc/96?img=${(i % 60) + 5}` : `https://api.dicebear.com/9.x/adventurer/png?size=96&seed=${i + 40}`);
+
+// ---------------------------------------------------------------- nhân vật + avatar nét
+const partsCache = new Map();
+function parts(c) {
+  const k = `${c.key}|${c.hi ? 1 : 0}`;
+  let p = partsCache.get(k);
+  if (!p) {
+    const layers = buildHeadLayers(c.key, false);
+    p = { back: layers.back, front: layers.front, face: c.hi || plainFace(c.key), smooth: !!c.hi, look: false };
+    partsCache.set(k, p);
+  }
+  return p;
+}
+function makeChar(i, extra = {}) {
+  const c = { key: `mock:${i}`, name: NAMES[i % NAMES.length], look: charLook(`mock:${i}`), x: 0, y: 0, tx: 0, ty: 0, state: 'idle', hi: null, nextWander: 0, ...extra };
+  const img = new Image();
+  img.onload = () => { try { c.hi = processFaceHi(img, FACE * S); } catch { /* giữ mặt giả */ } };
+  img.src = avatarUrl(i);
+  return c;
+}
+
+const vips = [0, 1, 2, 3, 4].map((i) => {
+  const c = makeChar(i, { rank: i + 1, giftTotal: [52000, 31800, 18500, 9900, 5200][i] });
+  c.x = seats[i].x; c.y = seats[i].y; c.seat = seats[i];
+  c.out = null; // { phase, t0 } khi đứng lên diễn
+  return c;
+});
+const crowd = Array.from({ length: 14 }, (_, k) => {
+  const c = makeChar(k + 8);
+  const r = rng(k * 31 + 5);
+  c.x = 20 + r() * (Lw - 40);
+  c.y = playTop + 6 + r() * (playBottom - playTop - 16);
+  c.tx = c.x; c.ty = c.y;
+  c.nextWander = Math.random() * 4000;
+  return c;
+});
+
+// ---------------------------------------------------------------- hoạt hoạ (hàm thuần của p) - sẽ thành overlay/js/anims.js
+const q = (v, step) => Math.round(v / step) * step;
+function pose(id, p, amp = 58) {
+  switch (id) {
+    case 'hop3': return { jump: Math.abs(Math.sin(p * Math.PI * 3)) * 14, state: 'jump' };
+    case 'sway': return { dx: Math.round(Math.sin(p * Math.PI * 8) * 2), jump: 0, state: 'walk', fast: true };
+    case 'spin': { let sx = Math.cos(p * Math.PI * 4); if (Math.abs(sx) < 0.18) sx = 0.18 * (sx < 0 ? -1 : 1); return { jump: Math.sin(p * Math.PI) * 6, sx: q(sx, 1 / 8), state: 'jump' }; }
+    case 'confetti': return { jump: Math.abs(Math.sin(p * Math.PI * 2)) * 6, state: 'jump' };
+    case 'flip': return { jump: Math.sin(Math.min(1, p * 1.05) * Math.PI) * 14, rot: q(Math.min(1, p * 1.05) * Math.PI * 2, Math.PI / 6), state: 'jump' };
+    case 'rocket': return { jump: Math.sin(p * Math.PI) * amp, state: 'jump' };
+    case 'fireworks': return { jump: Math.abs(Math.sin(p * Math.PI * 2)) * 4, state: 'jump' };
+  }
+  return { jump: 0, state: 'idle' };
+}
+const CONFETTI = ['#ff4d6d', '#ffd23f', '#4dd8ff', '#7cf29a', '#c77dff', '#ffffff'];
+function particles(M, id, p, x, y, seed, lod, amp = 58, jump = 0) {
+  const topY = y - jump - 38; // y = chân nhân vật (gốc), jump = độ cao đang bay
+
+  if (id === 'confetti') {
+    const n = lod ? 12 : 24;
+    for (let i = 0; i < n; i++) {
+      const r = rng(seed * 100 + i)();
+      const r2 = rng(seed * 100 + i + 50)();
+      const px = x + (r - 0.5) * 22 + Math.sin(p * 7 + i) * 3;
+      const py = topY - 10 + p * (46 + r2 * 14);
+      M.globalAlpha = Math.min(1, (1 - p) * 2.2);
+      R(M, px, py, r2 > 0.5 ? 2 : 1, 2, CONFETTI[i % CONFETTI.length]);
+    }
+    M.globalAlpha = 1;
+  } else if (id === 'sway') {
+    for (let i = 0; i < 3; i++) {
+      const pp = (p * 1.6 + i / 3) % 1;
+      const nx = x + (i - 1) * 9 + Math.sin(pp * 6 + i) * 3;
+      const ny = topY - 2 - pp * 18;
+      M.globalAlpha = 1 - pp;
+      R(M, nx, ny + 4, 3, 2, '#ffe27a'); R(M, nx + 2, ny, 1, 5, '#ffe27a');
+    }
+    M.globalAlpha = 1;
+  } else if (id === 'rocket') {
+    const dyAt = (pp) => Math.sin(pp * Math.PI) * amp;
+    for (let j = 0; j < (lod ? 4 : 8); j++) {
+      const pj = Math.max(0, p - j * 0.035);
+      const fy = y - dyAt(pj);
+      M.globalAlpha = Math.max(0, 0.6 - j * 0.08);
+      R(M, x - 3 + (j % 2) * 2, fy + 2, 5 - (j > 4 ? 1 : 0), 4, j < 2 ? '#fff' : '#cfd6e6');
+    }
+    M.globalAlpha = 1;
+    const fy = y - dyAt(p);
+    const fl = Math.floor(p * 40) % 2;
+    R(M, x - 2, fy + 1, 5, 3 + fl, '#ff7a1a'); R(M, x - 1, fy + 2, 3, 3 + fl * 2, '#ffd23f'); R(M, x, fy + 3, 1, 4 + fl, '#fff');
+  } else if (id === 'fireworks') {
+    const bursts = [[0.12, -9, -4, '#ff4d6d'], [0.36, 10, 0, '#4dd8ff'], [0.6, -2, -9, '#ffd23f']];
+    for (const [b, ox, oy, col] of bursts) {
+      if (p < b) continue;
+      const k = Math.min(1, (p - b) / 0.34);
+      const n = lod ? 8 : 14;
+      const r = 3 + k * 10;
+      M.globalAlpha = 1 - k * k;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        R(M, x + ox + Math.cos(a) * r, topY - 6 + oy + Math.sin(a) * r, 1, 1, i % 2 ? col : '#fff');
+      }
+      if (k < 0.2) spark(M, Math.round(x + ox), Math.round(topY - 6 + oy), '#fff', 1);
+    }
+    M.globalAlpha = 1;
+  } else if (id === 'spin' || id === 'flip' || id === 'hop3') {
+    if (p > 0.05 && p < 0.95) {
+      const n = lod ? 2 : 4;
+      for (let i = 0; i < n; i++) {
+        const a = p * 9 + (i / n) * Math.PI * 2;
+        spark(M, Math.round(x + Math.cos(a) * 11), Math.round(y - jump - 20 + Math.sin(a) * 15), '#ffe27a', 0.8);
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------- tiêu điểm
+function ell(c, cx, cy, rx, ry, col, a) {
+  c.globalAlpha = a;
+  for (let d = -ry; d <= ry; d++) {
+    const w = Math.round(rx * Math.sqrt(1 - (d / ry) ** 2));
+    R(c, cx - w, cy + d, w * 2, 1, col);
+  }
+  c.globalAlpha = 1;
+}
+function drawSpot(c, x, y, mode, level, t, full) {
+  if (mode === 'off') return;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 6);
+  if (mode === 'light' || !full) {
+    ell(c, x, y + 1, full ? 11 : 8, 2, '#ffe9a8', 0.28 + pulse * 0.1);
+    return;
+  }
+  ell(c, x, y + 1, 14 + level * 2, 3, '#ffe9a8', 0.22 + pulse * 0.08);
+  ell(c, x, y + 1, 8 + level, 2, '#fff6d0', 0.4);
+  for (let k = 0; k < 2 + level; k++) { // chùm sáng hình thang, rất mờ
+    c.globalAlpha = 0.13;
+    R(c, x - 8 - k * 2, y - 12 - k * 9, 16 + k * 4, 9, '#fff7c8');
+  }
+  c.globalAlpha = 0.12;
+  R(c, x - 8, y - 32, 16, 32, '#fff3b0');
+  c.globalAlpha = 1;
+  for (let i = 0; i < level + 1; i++) {
+    const a = t * 3 + (i / (level + 1)) * Math.PI * 2;
+    spark(c, Math.round(x + Math.cos(a) * 17), Math.round(y - 14 + Math.sin(a) * 8), '#ffe27a', 0.85);
+  }
+}
+
+// ---------------------------------------------------------------- người diễn
+let perfs = []; // { c, id, level, kind, t0, dur, seed }
+let dimA = 0;
+
+function standSpot(v) { return { x: v.seat.x, y: v.seat.y + 18 }; }
+
+function startPerform(c, id, level, kind) {
+  const now = simNow * 1000; // cùng đồng hồ với vòng lặp (có thể chạy chậm)
+  perfs = perfs.filter((p) => p.c !== c);
+  const dur = EFF[id].ms;
+  const p = { c, id, level, kind, t0: now, dur, seed: Math.floor(Math.random() * 999) + 1 };
+  if (c.rank) { // VIP: bước ra trước ghế -> diễn -> đi về ngồi lại
+    const sp = standSpot(c);
+    c.out = { phase: 'out', t0: now };
+    c.y0 = c.seat.y; c.tx = sp.x; c.ty = sp.y;
+    p.t0 = now + 380; // diễn sau khi bước ra
+    p.vip = true;
+  }
+  perfs.push(p);
+}
+
+function updatePerf(now) {
+  for (const p of [...perfs]) {
+    const c = p.c;
+    if (c.rank && c.out) {
+      if (c.out.phase === 'out') {
+        const k = Math.min(1, (now - c.out.t0) / 380);
+        c.x = c.seat.x; c.y = c.seat.y + (c.ty - c.seat.y) * k;
+        if (k >= 1) c.out.phase = 'act';
+      }
+      if (c.out.phase === 'act' && now >= p.t0 + p.dur) { c.out.phase = 'back'; c.out.t1 = now; }
+      if (c.out.phase === 'back') {
+        const k = Math.min(1, (now - c.out.t1) / 380);
+        c.y = c.seat.y + 18 - 18 * k;
+        if (k >= 1) { c.out = null; c.x = c.seat.x; c.y = c.seat.y; perfs = perfs.filter((q2) => q2 !== p); }
+      }
+    } else if (now >= p.t0 + p.dur) perfs = perfs.filter((q2) => q2 !== p);
+  }
+  // đám đông đi dạo
+  for (const c of crowd) {
+    const busy = perfs.some((p) => p.c === c);
+    if (!busy && now > c.nextWander) {
+      c.nextWander = now + 2500 + Math.random() * 4000;
+      if (Math.random() < 0.5) {
+        c.tx = Math.max(16, Math.min(Lw - 16, c.x + (Math.random() - 0.5) * 60));
+        c.ty = Math.max(playTop + 6, Math.min(playBottom - 12, c.y + (Math.random() - 0.5) * 36));
+        c.state = 'walk';
+      }
+    }
+    const dx = c.tx - c.x, dy = c.ty - c.y, d = Math.hypot(dx, dy);
+    if (d > 0.8 && !busy) { const s = Math.min(d, 18 * dtSec); c.x += dx / d * s; c.y += dy / d * s; c.state = 'walk'; } else if (!busy) c.state = 'idle';
+  }
+}
+
+// kế hoạch tiêu điểm: 1 chủ (owner), tối đa 2 người đầy đủ
+function planFocus(active) {
+  const rank = (p) => (p.kind === 'total' ? 1000 : 0) + p.level * 10 + p.t0 / 1e9;
+  const sorted = [...active].sort((a, b) => rank(b) - rank(a));
+  return { owner: sorted[0] || null, full: new Set(sorted.slice(0, 2)) };
+}
+
+// ---------------------------------------------------------------- vẽ một nhân vật (kể cả đang diễn)
+function drawPerformer(c, p, now, t, full, spotMode) {
+  const pr = Math.max(0, Math.min(1, (now - p.t0) / p.dur));
+  const amp = Math.max(6, Math.min(58, c.y - 38 - (lay.vipY + 26))); // không bay vào hàng VIP / ra khỏi mép trên canvas
+  const ps = now < p.t0 ? { jump: 0, state: 'idle' } : pose(p.id, pr, amp);
+  const x = c.x + (ps.dx || 0), y = c.y;
+  drawSpot(M, Math.round(c.x), Math.round(y), spotMode, p.level, t, full);
+  M.save();
+  const mid = y - (ps.jump || 0) - 14;
+  if (ps.rot || (ps.sx && ps.sx !== 1)) {
+    M.translate(x, mid);
+    if (ps.rot) M.rotate(ps.rot);
+    M.scale(ps.sx || 1, 1);
+    M.translate(-x, -mid);
+  }
+  const info = drawChar(M, c.look, x, y, ps.state, ps.fast ? t * 2.4 : t, { jump: ps.jump || 0, head: parts(c) });
+  if (c.rank === 1) drawCrown(M, Math.round(x), info.headTop, t);
+  M.restore();
+  if (now >= p.t0) particles(M, p.id, pr, Math.round(x), Math.round(y), p.seed, !full, amp, ps.jump || 0);
+  return info;
+}
+
+// ---------------------------------------------------------------- chữ (độ phân giải thật)
+const trunc = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
+const fmtK = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}K` : String(n));
+function text(s, lx, ly, size, color, stroke = INK, align = 'center') {
+  M.font = `700 ${size * S}px "Pixelify Sans",monospace`;
+  M.textAlign = align; M.textBaseline = 'middle'; M.lineJoin = 'round';
+  M.lineWidth = Math.max(3, size * S * 0.3); M.strokeStyle = stroke;
+  M.strokeText(s, lx * S, ly * S); M.fillStyle = color; M.fillText(s, lx * S, ly * S);
+}
+function bubble(c, headTop, title) {
+  const name = trunc(c.name, 10);
+  const w = Math.max(40, name.length * 5.4 + 12);
+  const x = Math.max(2, Math.min(Lw - w - 2, c.x - w / 2));
+  const tx = Math.max(x + 4, Math.min(x + w - 4, c.x));
+  const y = Math.max(1, headTop - 22); // không lẹm mép trên canvas
+  M.fillStyle = '#fffbe8'; M.strokeStyle = INK; M.lineWidth = 2;
+  M.fillRect(x * S, y * S, w * S, 18 * S); M.strokeRect(x * S, y * S, w * S, 18 * S);
+  M.beginPath(); M.moveTo((tx - 2) * S, (y + 18) * S); M.lineTo((tx + 2) * S, (y + 18) * S); M.lineTo(tx * S, (y + 21) * S); M.fill();
+  M.font = `700 ${6.5 * S}px "Pixelify Sans",monospace`; M.textAlign = 'center'; M.textBaseline = 'middle';
+  M.fillStyle = INK; M.fillText(name, (x + w / 2) * S, (y + 5.5) * S);
+  M.fillStyle = '#d6336c'; M.fillText(title, (x + w / 2) * S, (y + 13) * S);
+}
+
+// ---------------------------------------------------------------- vòng lặp
+let paused = false, speed = 1, last = performance.now(), dtSec = 0.033, simNow = 0;
+const el = (id) => document.getElementById(id);
+const cfg = () => ({ spot: el('spot').value, dim: el('dim').checked, look: el('look').checked });
+
+function frame(realNow) {
+  requestAnimationFrame(frame);
+  if (realNow - last < 33) return;
+  const dtReal = Math.min(0.5, (realNow - last) / 1000); // theo đồng hồ thật, không bị tụt khi trình duyệt chạy chậm
+  last = realNow;
+  if (!paused) simNow += dtReal * speed;
+  dtSec = dtReal * speed;
+  const now = simNow * 1000;
+  const t = simNow;
+  const { spot, dim, look } = cfg();
+  if (!paused) updatePerf(now);
+
+  M.setTransform(1, 0, 0, 1, 0, 0);
+  M.clearRect(0, 0, W, H);
+  M.setTransform(S, 0, 0, S, 0, 0);
+  M.imageSmoothingEnabled = false;
+  M.drawImage(bg, 0, 0);
+  drawLights(M, lay, t);
+
+  const active = perfs.filter((p) => now >= p.t0 - 400 && now < p.t0 + p.dur + 100);
+  const plan = planFocus(active.filter((p) => now >= p.t0));
+  const isPerf = (c) => perfs.some((p) => p.c === c);
+
+  // ghế VIP
+  const labels = [];
+  for (const v of vips) {
+    const i = v.rank - 1, s = SEAT[i], seat = seats[i];
+    const out = !!v.out;
+    if (i === 0 && !out) drawAura(M, seat.x, seat.y - 20, t);
+    if (out) M.globalAlpha = 0.65;
+    chairBack(M, s, seat.x, seat.y);
+    M.globalAlpha = 1;
+    let info = null;
+    if (!out) info = drawChar(M, v.look, seat.x, seat.y - 1, 'sit', t, { noShadow: true, head: parts(v) });
+    if (out) M.globalAlpha = 0.65;
+    chairFront(M, s, seat.x, seat.y);
+    M.globalAlpha = 1;
+    badge(M, Math.round(seat.x + s.w / 2 - 1), seat.y - s.h - 1, out ? '#59607a' : RANKCOL[i]);
+    if (i === 0 && info) drawCrown(M, Math.round(seat.x), info.headTop, t);
+    labels.push({ v, i, seat, s, out });
+  }
+
+  // sân: người thường -> lớp tối -> người đang diễn
+  const normal = crowd.filter((c) => !isPerf(c));
+  normal.sort((a, b) => a.y - b.y);
+  for (const c of normal) {
+    const lookUp = look && spot === 'strong' && plan.owner && Math.hypot(c.x - plan.owner.c.x, c.y - plan.owner.c.y) < 60;
+    const info = drawChar(M, c.look, c.x, c.y, lookUp ? 'idle' : c.state, t, { head: parts(c) });
+  }
+  const want = dim && plan.owner && spot !== 'off' ? 1 : 0;
+  dimA += (want - dimA) * Math.min(1, dtSec * 8);
+  if (dimA > 0.01) {
+    M.globalAlpha = 0.3 * dimA;
+    M.fillStyle = '#000';
+    M.fillRect(0, playTop - 34, Lw, Lh - playTop + 34);
+    M.globalAlpha = 1;
+  }
+  const bubbles = [];
+  const field = perfs.filter((p) => now >= p.t0 - 400 && (!p.c.rank || p.c.out)).sort((a, b) => a.c.y - b.c.y);
+  for (const p of field) {
+    const full = plan.full.has(p);
+    const info = drawPerformer(p.c, p, now, t, full || now < p.t0, spot);
+    if (now >= p.t0 - 100) bubbles.push({ c: p.c, headTop: info.headTop, p });
+  }
+  // người vừa bước ra nhưng chưa tới lượt diễn: vẽ đứng yên
+  for (const v of vips) {
+    if (v.out && !perfs.some((p) => p.c === v && now >= p.t0 - 400)) {
+      const info = drawChar(M, v.look, v.x, v.y, 'idle', t, { head: parts(v) });
+      if (v.rank === 1) drawCrown(M, Math.round(v.x), info.headTop, t);
+    }
+  }
+
+  // chữ
+  M.setTransform(1, 0, 0, 1, 0, 0);
+  for (const { v, i, seat, s, out } of labels) {
+    if (out) continue;
+    text(String(i + 1), Math.round(seat.x + s.w / 2 - 1), seat.y - s.h - 1, 6, INK, 'transparent');
+    text(trunc(v.name, 10), seat.x, seat.y + 9, 7, '#ffffff');
+    text(`◆ ${fmtK(v.giftTotal)}`, seat.x, seat.y + 17, 6.5, RANKCOL[i]);
+  }
+  for (const b of bubbles) {
+    const title = b.p.kind === 'total' ? `x${[30, 100, 300][b.p.level - 1]} tim!` : 'thả tim liên tục!';
+    bubble(b.c, b.headTop, title);
+  }
+  if (plan.owner) text(`Tiêu điểm: ${plan.owner.c.name} · ${EFF[plan.owner.id].label} · cấp ${plan.owner.level}`, 4, 8, 5.5, '#ffe27a', INK, 'left');
+}
+requestAnimationFrame(frame);
+
+// ---------------------------------------------------------------- điều khiển
+function pickTarget() {
+  const v = el('target').value;
+  if (v === 'vip1') return vips[0];
+  if (v === 'vip2') return vips[1];
+  if (v === 'vip4') return vips[3];
+  const free = crowd.filter((c) => !perfs.some((p) => p.c === c));
+  return free[Math.floor(Math.random() * free.length)];
+}
+const lv = () => Number(el('level').value);
+const kd = () => el('kind').value;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms / speed));
+
+el('effBtns').innerHTML = EFFECTS.map((e, i) => `<button data-e="${e.id}">${i + 1}. ${e.label}</button>`).join('');
+el('effBtns').addEventListener('click', (e) => {
+  const id = e.target.dataset.e;
+  if (!id) return;
+  const c = pickTarget();
+  if (c.rank && c.out) return;
+  startPerform(c, id, lv(), kd());
+});
+el('seq').addEventListener('click', async () => {
+  for (const e of EFFECTS) {
+    const c = pickTarget();
+    if (c.rank && c.out) continue;
+    startPerform(c, e.id, lv(), kd());
+    await wait(e.ms + (c.rank ? 900 : 500));
+  }
+});
+el('multi').addEventListener('click', () => {
+  const free = crowd.filter((c) => !perfs.some((p) => p.c === c));
+  const picks = [free[0], free[5], free[9]];
+  startPerform(picks[0], 'spin', 3, 'total');
+  startPerform(picks[1], 'confetti', 2, 'total');
+  startPerform(picks[2], 'hop3', 1, 'burst');
+});
+el('vipseq').addEventListener('click', async () => {
+  for (const [v, id] of [[vips[0], 'fireworks'], [vips[1], 'spin'], [vips[3], 'hop3']]) {
+    if (!v.out) startPerform(v, id, 3, 'total');
+    await wait(EFF[id].ms + 1000);
+  }
+});
+el('speed').addEventListener('change', (e) => (speed = Number(e.target.value)));
+el('pause').addEventListener('click', () => { paused = !paused; el('pause').classList.toggle('on', paused); });
+const step = (d) => { simNow = Math.max(0, simNow + d); dtSec = Math.abs(d) || 0.033; updatePerf(simNow * 1000); };
+el('stepB').addEventListener('click', () => { paused = true; el('pause').classList.add('on'); step(-0.1); });
+el('stepF').addEventListener('click', () => { paused = true; el('pause').classList.add('on'); step(0.1); });
+el('bgsel').addEventListener('change', (e) => (el('stage').className = e.target.value));
+</script>
+</body>
+</html>

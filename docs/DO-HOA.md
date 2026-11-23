@@ -46,6 +46,21 @@ Trong `JERSEY`, thêm một dòng:
 
 rồi đổi `h % 8` thành `h % 9` trong `charLook` và `r() * 8` thành `r() * 9` trong `buildHead`.
 
+## Hiệu ứng thả tim
+
+Hoạt hoạ và hạt nằm trong [`overlay/js/anims.js`](../overlay/js/anims.js) dưới dạng **hàm thuần theo tiến độ p (0..1)**: `pose(id, p)` trả về độ cao, lệch ngang, co ngang (xoay giả 3D), góc xoay (lượng tử 30 độ), `particles(id, p, ctx)` trả về các hạt cần vẽ. Không dùng `Math.random` (số ngẫu nhiên suy ra từ seed) nên kiểm thử được. Thứ tự vẽ, đèn chiếu và bong bóng ưu tiên nằm trong [`overlay/js/focus.js`](../overlay/js/focus.js); hàm vẽ đèn chiếu `drawSpot` và kiểu tay lắc (`o.arms`) nằm trong `art.js`.
+
+| Muốn đổi | Sửa ở |
+|---|---|
+| Thời lượng một hiệu ứng | `ANIM_MS` trong `anims.js` **và** `HEART_EFFECTS` trong `server/core/heartEffects.js` (có test đối chiếu hai nơi) |
+| Dáng nhân vật khi diễn | hàm `pose` trong `anims.js` |
+| Pháo giấy, lửa, pháo hoa, nốt nhạc | hàm `particles` trong `anims.js` (tối đa 60 hạt) |
+| Thêm một hiệu ứng mới | thêm `id` vào `ANIM_MS`, `pose`, `particles` và `HEART_EFFECTS`; thêm nhãn tiếng Việt ở `HEART_EFFECTS` |
+| Đèn chiếu, độ tối đám đông | `drawSpot` trong `art.js`, `DIM_ALPHA` trong `focus.js` |
+| Số người được tiêu điểm / hoạt hoạ lớn cùng lúc | `MAX_FULL`, `MAX_BIG_ANIMS` trong `focus.js` |
+
+Xem thử nhanh không cần server: `npm run mockup` rồi mở `http://localhost:3070/design/effects-mockup.html` (trên Windows PowerShell dùng `npm.cmd run mockup`).
+
 ## Avatar người xem
 
 Avatar được tải qua proxy của server (cùng origin, có cache ở `data/avatars`), cắt tròn và thêm viền tối mảnh (`processFaceHi`). Ảnh **không** bị pixel hoá hay giảm màu: nó được vẽ ở độ phân giải thật của canvas (80×80 điểm ảnh với Stage rộng 1080), còn tóc, mũ và thân vẫn là pixel-art. Chưa tải được ảnh thì dùng mặt giả vẽ bằng code (`plainFace`) và tự đổi sang ảnh thật khi xong. Host ảnh nằm trong danh sách cho phép (`server/http/avatarProxy.js`, thêm qua biến `AVATAR_HOSTS`).

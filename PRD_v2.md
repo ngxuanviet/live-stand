@@ -113,6 +113,17 @@ Tách hoàn toàn **Sources** (đầu vào) và **Stages** (đầu ra) qua **Eve
   - Kích hoạt gồm: chọn tọa độ ngẫu nhiên mới và di chuyển mượt (Lerp); đẩy Z-Index lên trên cùng kèm hiệu ứng chớp / nhảy; sau 10–15 giây không có tim mới, Z-Index trở lại theo trục Y.
 - Số tim theo người dùng là **xấp xỉ** (do gộp event) — chấp nhận trong thiết kế.
 
+### B2. Hiệu ứng cho người thả nhiều tim **[v2]**
+- **Hai loại mốc, admin tự đặt trên Dashboard, không có mặc định** (không có mốc nào = tính năng tắt):
+  - **Mốc tích luỹ:** số `hearts` của một người cắt qua ngưỡng (vd 30, 100, 300) thì diễn hiệu ứng lớn một lần.
+  - **Mốc dồn dập:** đủ X tim trong Y giây thì diễn hiệu ứng nhỏ; sau khi bắn có khoảng nghỉ 5 giây.
+- "Tim" là số `hearts` hiển thị trong Dashboard, gồm cả thưởng follow, share, bình luận. Mốc dựa trên việc `hearts` **cắt qua** ngưỡng trong chính sự kiện nên khởi động lại server hay sửa ngưỡng sau này không làm bắn lại hay bắn hồi tố. Một event vượt nhiều mốc chỉ diễn mốc cao nhất; mốc tích luỹ thắng mốc dồn dập.
+- **Chỉ diễn một lần**, không để lại huy hiệu hay quầng sáng.
+- **Thư viện 7 hiệu ứng** (theo độ mạnh): nhảy cẫng, nhún nhảy, xoay vòng, pháo giấy, lộn nhào, phóng lên trời, pháo hoa. Mỗi mốc chọn một hiệu ứng.
+- **VIP đang ngồi ghế cũng diễn như người thường:** đứng lên, bước ra trước ghế (ghế để trống, vương miện hạng 1 đi theo), diễn xong đi về ngồi lại.
+- **Làm nổi bật người diễn:** luôn đứng trên cùng; đèn chiếu dưới chân (Tắt / Nhẹ / Mạnh, mạnh dần theo mốc); tuỳ chọn làm tối đám đông; bong bóng tên kèm dòng "xN tim!" luôn hiện và không bị cắt bởi giới hạn bong bóng; chế độ Mạnh cho người xung quanh ngước nhìn. Chỉ một người giữ tiêu điểm, tối đa 2 người đầy đủ, người thứ 3 trở đi chỉ nhảy nhẹ; tối đa 6 hoạt hoạ lớn cùng lúc.
+- Cấu hình theo Stage: `tierTotal`, `tierBurst` (tối đa 8 mốc mỗi loại), `tierSpotlight`, `tierDim`. Nút **Xem thử** trên Dashboard (nhân vật sân hoặc từng ghế VIP, không đổi số tim) và nút "Thả tim liên tục" trong Test Panel.
+
 ### C. Top 5 Ghế VIP (theo quà tặng)
 - **Giá trị quà**:
   - Đơn vị chuẩn là **diamond**, lấy từ danh sách quà của nền tảng theo `giftId`. Bảng quy đổi do admin nhập là dự phòng khi không tra được.
@@ -135,7 +146,7 @@ Tách hoàn toàn **Sources** (đầu vào) và **Stages** (đầu ra) qua **Eve
 - **Chủ đề (đã chốt)**: fan zone ban đêm trước màn hình khổng lồ ngoài trời, phong cách pixel-art chibi. Màn hình game (nằm phía trên overlay trong OBS) là phông nền; nhân vật **quay mặt ra camera** cổ vũ streamer, và **thỉnh thoảng ngước lên xem màn hình** (cá nhân ngẫu nhiên, và cả sân cùng ngước định kỳ; có thể kích hoạt khi có sự kiện lớn).
 - **Cấu tạo nhân vật (đã chốt)**: đầu 26×26 px gồm 3 lớp: tóc/mũ phía sau (chọn theo hash `user_key`, 6 kiểu), **avatar người xem làm khuôn mặt (vùng 20×20 đơn vị logic, vẽ nét ở độ phân giải thật)**, tóc mái/vành mũ phía trước; **thân** 16×14 px mặc áo bóng đá (8 mẫu áo, chọn theo hash).
 - **Xử lý avatar (client, cache 1 lần/người)**: cắt tròn ở giữa (lệch nhẹ lên để lấy mặt), thêm viền tối mảnh, vẽ ở **độ phân giải thật** của canvas (không pixel hoá, không giảm màu) để avatar nét; tóc, mũ và thân vẫn là pixel-art. Avatar lỗi hoặc là ảnh mặc định của nền tảng thì dùng mặt giả vẽ bằng code (tạo theo hash); đổi sang ảnh thật khi tải xong.
-- **Bộ hoạt ảnh tối thiểu**: `idle` (2 khung), `walk` (4), `sit` (VIP), `jump` (chớp sáng mốc tim), `look` (ngước lên: mặt co dọc, lộ cằm, ánh sáng màn hình, tay chỉ lên). VIP vắng dùng hiệu ứng mờ và biểu tượng "zZ".
+- **Bộ hoạt ảnh tối thiểu**: `idle` (2 khung), `walk` (4), `sit` (VIP), `jump` (chớp sáng mốc tim), `look` (ngước lên: mặt co dọc, lộ cằm, ánh sáng màn hình, tay chỉ lên), cùng 7 hiệu ứng thả tim (mục 4B2) vẽ bằng các hàm thuần theo tiến độ (`overlay/js/anims.js`). VIP vắng dùng hiệu ứng mờ và biểu tượng "zZ".
 - **Cách tạo đồ họa**: toàn bộ sinh bằng code, không dùng asset có sẵn. Mockup tham chiếu: `design/mockup.html`. Mật độ hiển thị cần kiểm tra lại ở 30 nhân vật (đầu 26 px làm sân khá chật).
 - Thêm hoặc đổi kiểu nhân vật bằng cách sửa các bảng màu và hàm vẽ trong code (xem `docs/DO-HOA.md`).
 
